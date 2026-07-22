@@ -8,6 +8,8 @@ coverage/
 .wrangler/
 .dev.vars*
 !.dev.vars.example
+tools/collections-backup/bridge/wrangler.local.jsonc
+wrangler.*.local.jsonc
 .env*
 !.env.example
 
@@ -22,6 +24,7 @@ import-reports/
 
 # Logs and local tooling
 *.log
+firepit-log.txt
 .DS_Store
 .idea/
 .cache/
