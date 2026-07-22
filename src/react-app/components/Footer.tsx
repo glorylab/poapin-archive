@@ -15,8 +15,12 @@ export function Footer({ meta }: { meta: ArchiveMeta | null }) {
         <div className="footer__links">
           <Link href="/">Browse</Link>
           <Link href="/about-data">About the data</Link>
-          <a href="https://github.com/glorylab" target="_blank" rel="noopener noreferrer">
-            Glory Lab
+          <a
+            href="https://github.com/glorylab/poapin-archive"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open source on GitHub
           </a>
         </div>
         <p className="footer__legal">
