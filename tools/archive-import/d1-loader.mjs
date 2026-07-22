@@ -361,11 +361,18 @@ async function load(context, clients) {
     }
     const existing = await journalMap(client);
     assertKnownJournal(context, role, existing);
-    for (const artifact of context.targetArtifacts[role].load) {
+    const plan = context.targetArtifacts[role].load;
+    for (const [index, artifact] of plan.entries()) {
       if (artifact.phase === "load" && existing.has(artifact.path)) {
         assertMarker(context, artifact, existing.get(artifact.path));
+        process.stderr.write(
+          `[archive-d1-loader] ${role} ${index + 1}/${plan.length} verified existing ${artifact.path}\n`,
+        );
         continue;
       }
+      process.stderr.write(
+        `[archive-d1-loader] ${role} ${index + 1}/${plan.length} importing ${artifact.path}\n`,
+      );
       await client.importFile(artifact.absolutePath);
       if (artifact.phase === "load") {
         const marker = await journalMarker(client, context.snapshotId, artifact.path);
