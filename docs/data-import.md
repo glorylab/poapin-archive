@@ -10,9 +10,10 @@ row-count, and artwork findings.
 The `2026-07-02-v1` ZIP and extracted SQLite database have been inventoried. The
 source contains `poap.sqlite` plus `artwork/<drop_id>.webp`; target migrations
 encode the verified schema and required query indexes. The complete D1 import
-has been remotely verified and activated. Original artwork is synchronizing
-progressively to immutable R2 keys; the strict import path for future snapshots
-continues to require a publishable R2 report before activation.
+has been remotely verified and activated. All 73,795 eligible artwork objects
+have been published to immutable R2 keys with a complete, zero-failure,
+publishable report. The strict import path for future snapshots continues to
+require the same D1 and R2 gates before activation.
 
 Do not publish a dataset merely because it can be parsed. Provenance, integrity,
 privacy, and redistribution considerations are release gates.

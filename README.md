@@ -16,9 +16,8 @@ artwork served from [`media.poap.in`](https://media.poap.in).
 
 > [!IMPORTANT]
 > The public deployment serves a fixed snapshot captured on July 2, 2026, not a
-> canonical or live view of POAP ownership. During the initial publication,
-> original artwork is synchronized progressively; unavailable images fall back
-> to the POAP mark until their immutable R2 object is present.
+> canonical or live view of POAP ownership. Its catalog, holdings, and 73,795
+> original artwork objects have been integrity-checked and published.
 
 ## What it is
 

@@ -15,8 +15,8 @@ stable public contract exists.
 - Indexed D1 catalog and holdings queries, exact-address CSV/JSON exports, and
   snapshot-versioned Workers Cache responses.
 - Immutable original artwork delivery from R2 at
-  [media.poap.in](https://media.poap.in), with progressive initial
-  synchronization and UI fallbacks.
+  [media.poap.in](https://media.poap.in), with a verified 73,795-object initial
+  synchronization and UI fallbacks for source-missing artwork.
 - Authenticated, resumable R2 import tooling for large archive uploads.
 - Open-source contribution, conduct, security, licensing, architecture,
   deployment, and data-import documentation.

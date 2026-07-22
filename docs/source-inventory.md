@@ -96,6 +96,10 @@ The archive contains 73,795 unique `<drop_id>.webp` files totaling
 15,239,643,484 bytes by ZIP central-directory uncompressed size. There are no
 artwork files without a matching drop. Eighty-one drops have no artwork entry.
 
+The initial production R2 publication uploaded all 73,795 eligible files. Its
+final report was complete and publishable with zero failures; the uploaded byte
+total matched the measured 15,239,643,484 bytes.
+
 Observed size distribution:
 
 | Percentile | File size |
