@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { importArchive } from "../lib/importer.mjs";
+import { artworkEntriesSha256 } from "../lib/archive-inventory.mjs";
 import { sqlLiteral } from "../lib/sql-shards.mjs";
 import { normalizeAddress } from "../lib/util.mjs";
 import { verifyImportOutput } from "../lib/verifier.mjs";
@@ -31,6 +32,7 @@ test("generates deterministic D1 shards, quality report, and R2 manifest", async
     const artworkDirectory = resolve(temporaryRoot, "artwork");
     const outputOne = resolve(temporaryRoot, "output-one");
     const outputTwo = resolve(temporaryRoot, "output-two");
+    const outputFromInventory = resolve(temporaryRoot, "output-inventory");
     await mkdir(artworkDirectory);
     execFileSync("sqlite3", [sourceDatabase], { input: SOURCE_FIXTURE_SQL });
     const minimalWebp = Buffer.from("524946460400000057454250", "hex");
@@ -98,10 +100,122 @@ test("generates deterministic D1 shards, quality report, and R2 manifest", async
     assert.equal(verification.catalog.drops, 2);
     assert.equal(verification.holdings.tokens, 3);
     assert.match(verification.ownerLookupPlan.join("\n"), /PRIMARY KEY/);
+
+    const inventoryEntries = [
+      {
+        dropId: 1,
+        path: "artwork/1.webp",
+        byteLength: 12,
+        compressedByteLength: 10,
+        compressionMethod: 8,
+        crc32: "11111111",
+      },
+      {
+        dropId: 2,
+        path: "artwork/2.webp",
+        byteLength: 12,
+        compressedByteLength: 10,
+        compressionMethod: 8,
+        crc32: "22222222",
+      },
+    ];
+    const expectedArchiveSha256 = "a".repeat(64);
+    const artworkInventoryPath = resolve(temporaryRoot, "artwork-inventory.json");
+    const artworkInventory = makeArtworkInventory(inventoryEntries, expectedArchiveSha256);
+    await writeFile(artworkInventoryPath, `${JSON.stringify(artworkInventory)}\n`);
+    const importedInventory = await importArchive({
+      ...commonOptions,
+      artworkDirectory: undefined,
+      artworkInventoryPath,
+      artworkInventoryPolicy: policyForInventory(artworkInventory),
+      expectedArchiveSha256,
+      outputDirectory: outputFromInventory,
+    });
+    assert.equal(importedInventory.report.counts.accepted.artworks, 2);
+    assert.deepEqual(importedInventory.report.source.archiveIntegrity, {
+      status: "expected-only-not-measured",
+      expectedSha256: expectedArchiveSha256,
+      measuredSha256: null,
+      matchesExpected: null,
+    });
+    assert.match(
+      importedInventory.report.quality.warnings.join("\n"),
+      /was not measured by the HTTP Range inventory/,
+    );
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
 });
+
+function makeArtworkInventory(entries, expectedArchiveSha256) {
+  const centralSha256 = "b".repeat(64);
+  return {
+    formatVersion: 1,
+    kind: "poapin-remote-artwork-inventory",
+    policyId: "fixture-v1",
+    snapshotId: "2026-07-02-v1",
+    source: {
+      url: "https://example.invalid/archive.zip",
+      byteLength: 123456,
+      etag: '"fixture"',
+      lastModified: "Thu, 02 Jul 2026 15:28:18 GMT",
+    },
+    verification: {
+      acquisition: { method: "http-range", requestCount: 2, byteLength: 2048 },
+      centralDirectory: {
+        status: "verified",
+        zip64: true,
+        offset: 100000,
+        byteLength: 2048,
+        entryCount: 3,
+        expectedSha256: centralSha256,
+        measuredSha256: centralSha256,
+        matchesExpected: true,
+      },
+      wholeArchiveSha256: {
+        status: "not-measured",
+        expectedSha256: expectedArchiveSha256,
+        measuredSha256: null,
+        matchesExpected: null,
+        reason: "fixture",
+      },
+    },
+    artwork: {
+      count: entries.length,
+      entriesSha256: artworkEntriesSha256(entries),
+      entries,
+    },
+    quality: {
+      duplicateDropIds: [],
+      encryptedEntries: 0,
+      symlinkEntries: 0,
+      unsafePaths: [],
+      unexpectedEntries: 1,
+      invalidWebpSignatures: [],
+    },
+  };
+}
+
+function policyForInventory(inventory) {
+  return {
+    id: inventory.policyId,
+    snapshotId: inventory.snapshotId,
+    archiveUrl: inventory.source.url,
+    byteLength: inventory.source.byteLength,
+    expectedArchiveSha256: inventory.verification.wholeArchiveSha256.expectedSha256,
+    expectedEtag: inventory.source.etag,
+    centralDirectory: {
+      zip64: inventory.verification.centralDirectory.zip64,
+      offset: inventory.verification.centralDirectory.offset,
+      byteLength: inventory.verification.centralDirectory.byteLength,
+      entryCount: inventory.verification.centralDirectory.entryCount,
+      sha256: inventory.verification.centralDirectory.expectedSha256,
+    },
+    artworkCount: inventory.artwork.count,
+    unexpectedEntryCount: inventory.quality.unexpectedEntries,
+    artworkEntriesSha256: inventory.artwork.entriesSha256,
+  };
+}
 
 const SOURCE_FIXTURE_SQL = `
 CREATE TABLE drops (

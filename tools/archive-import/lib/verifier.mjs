@@ -149,6 +149,9 @@ export async function verifyImportOutput({ inputDirectory, migrationsRoot }) {
       "schema_version",
       "importer_version",
       "source_database_sha256",
+      "source_archive_sha256_status",
+      "source_archive_expected_sha256",
+      "source_archive_sha256",
     ]) {
       invariant(
         catalogMetadata[key] === holdingsMetadata[key],

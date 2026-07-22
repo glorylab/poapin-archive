@@ -2,15 +2,17 @@
 
 This tool converts the immutable `poap.sqlite` snapshot into bounded SQL files
 for the two D1 databases and a machine-readable R2 artwork manifest. It is an
-operator-side data job: it does not make network requests, upload media, mutate
-Cloudflare resources, or run inside a Worker.
+operator-side data job: the importer does not make network requests, upload
+media, mutate Cloudflare resources, or run inside a Worker. A separate inventory
+command makes bounded HTTP Range reads against the pinned source archive.
 
 ## Requirements
 
 - Node.js 22 or newer;
 - the `sqlite3` command-line client with JSON1 and FTS5 support;
 - enough free space for the generated SQL (the holdings output is large); and
-- either the original archive ZIP or an extracted artwork directory.
+- either a verified Range inventory, the original archive ZIP, or an extracted
+  artwork directory.
 
 Keep the source files outside Git. The repository ignores SQLite databases,
 archive ZIPs, artwork, `data/`, and `import-reports/`.
@@ -20,6 +22,37 @@ archive ZIPs, artwork, `data/`, and `import-reports/`.
 Use a new or empty output directory. Supplying expected digests makes checksum
 failure an immediate hard error. `--retrieved-at` must describe acquisition,
 not the time at which this command happens to run.
+
+The recommended path does not download the 15.8 GB ZIP. It fetches only the
+final ZIP records and the 7.2 MB ZIP64 central directory from the fixed archive
+URL, validates exact `Content-Range`/length/ETag responses, and checks pinned
+central-directory and canonical artwork-entry SHA-256 digests:
+
+```sh
+node tools/archive-import/inventory.mjs \
+  --output /absolute/path/to/import-reports/2026-07-02-v1/artwork-inventory.json
+```
+
+Use the resulting inventory as the artwork input:
+
+```sh
+node tools/archive-import/cli.mjs \
+  --database /absolute/path/to/poap.sqlite \
+  --artwork-inventory /absolute/path/to/artwork-inventory.json \
+  --output /absolute/path/to/import-reports/2026-07-02-v1/sql \
+  --source-url https://downloads.poaparchive.com/archive.zip \
+  --expected-database-sha256 18a052ec76a0b38f492ade7ff62869ead4556cd66cd8020a8550da9aa0e6a506 \
+  --expected-archive-sha256 046850de3bd4b3c6aa75c33c4a1a589b4ab176aacdd5986c1a824df803c07633 \
+  --retrieved-at 2026-07-22T00:00:00Z
+```
+
+An expected whole-archive SHA-256 is a pin, not proof that every archive byte
+was read. Range inventories explicitly record the whole-archive digest as
+`not-measured`; `report.json` and both D1 `archive_meta` tables retain the
+`expected-only-not-measured` status. Only a local full-ZIP pass or the media
+uploader's complete forward stream can produce a measured matching digest.
+
+To inventory and hash a complete local ZIP instead, use:
 
 ```sh
 node tools/archive-import/cli.mjs \
@@ -32,7 +65,7 @@ node tools/archive-import/cli.mjs \
   --retrieved-at 2026-07-22T00:00:00Z
 ```
 
-For already extracted artwork, replace `--archive` with:
+For already extracted artwork, replace the artwork input with:
 
 ```sh
 --artwork-directory /absolute/path/to/artwork
@@ -78,10 +111,10 @@ media coverage, every artifact's byte length and SHA-256, warnings, and
 publish-blocking issues. The CLI exits with status 2 after writing the report
 when review is required.
 
-Every R2 manifest row carries `snapshotId`. The manifest uses snapshot-isolated immutable keys in the form
-`snapshots/{snapshotId}/artwork/{dropId}.webp` and contains upload metadata plus
-`eligibleForPublish`. It is an object list, not an upload instruction; an
-uploader must skip any row where that flag is false.
+Every R2 manifest row carries `snapshotId`. The manifest uses snapshot-isolated
+immutable keys in the form `snapshots/{snapshotId}/artwork/{dropId}.webp` and
+contains upload metadata plus `eligibleForPublish`. It is an object list, not an
+upload instruction; an uploader must skip any row where that flag is false.
 
 After review, use the separate [R2 media uploader](../r2-media-upload/README.md),
 which consumes this manifest verbatim and maintains a resumable checkpoint.
@@ -97,9 +130,9 @@ which consumes this manifest verbatim and maintains a resumable checkpoint.
 - `drops.token_count` and `drops.has_artwork` are populated from accepted token
   rows and the verified media inventory. `drop_stats` contains only valid email
   reservation totals for every accepted drop.
-- `owner_stats` is computed by SQLite with `lower(owner_address)`, bounded disk
-  temporary storage, and deterministic address ordering. Null timestamps would
-  normalize to zero, but target validation rejects null source timestamps first.
+- SQLite streams tokens in normalized clustered-key order with bounded disk
+  temporary storage; the importer derives one bounded in-memory owner aggregate
+  at a time. Target validation rejects null source timestamps.
 - The importer checks both the source primary-key declaration and the complete
   dataset for global `source_uid` uniqueness. The 51 known duplicate `poap_id`
   values are preserved; `source_uid` is the stable pagination tie-breaker.
@@ -123,8 +156,9 @@ imports belong in fresh staging databases, never the currently active resources.
 
 `archive_meta` is removed by each prepare shard and restored only by each final
 shard. Both databases record the same `snapshot_id`, schema/importer versions,
-source digest, and relevant counts. API reads therefore see an unavailable or
-mismatched archive rather than a half-loaded snapshot.
+source database digest, archive digest expectation/measurement status, and
+relevant counts. API reads therefore see an unavailable or mismatched archive
+rather than a half-loaded snapshot.
 
 ## Local verification
 

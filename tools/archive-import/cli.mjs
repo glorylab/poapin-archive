@@ -11,7 +11,7 @@ const HELP = `POAP.in archive importer
 Usage:
   node tools/archive-import/cli.mjs \\
     --database /path/to/poap.sqlite \\
-    --archive /path/to/archive.zip \\
+    --artwork-inventory /path/to/artwork-inventory.json \\
     --output /path/to/import-reports/2026-07-02-v1 \\
     --expected-database-sha256 <sha256> \\
     --expected-archive-sha256 <sha256> \\
@@ -19,6 +19,7 @@ Usage:
 
 Artwork input (choose one):
   --archive <zip>               Inventory artwork entries in the source ZIP.
+  --artwork-inventory <json>    Use a verified HTTP Range inventory JSON.
   --artwork-directory <dir>     Inventory extracted .webp files and hash them.
   --allow-missing-artwork       Deliberate metadata-only run (blocking by default).
 
@@ -30,7 +31,7 @@ Options:
   --retrieved-at <timestamp>    Stable ISO-8601 acquisition timestamp.
   --media-base-url <url>        Defaults to https://media.poap.in.
   --expected-database-sha256    Verify the extracted SQLite file.
-  --expected-archive-sha256     Verify the source ZIP (requires --archive).
+  --expected-archive-sha256     Verify a local ZIP, or pin an inventory expectation.
   --skip-artwork-hashes         Skip per-file SHA-256 for an extracted directory.
   --max-shard-mib <integer>     SQL shard ceiling; default 8 MiB.
   --max-statement-kib <integer> SQL statement ceiling; default 90 KiB, max 96.
@@ -73,6 +74,7 @@ function parseArguments(argv) {
     ["--database", "databasePath"],
     ["--output", "outputDirectory"],
     ["--archive", "archivePath"],
+    ["--artwork-inventory", "artworkInventoryPath"],
     ["--artwork-directory", "artworkDirectory"],
     ["--snapshot-id", "snapshotId"],
     ["--source-url", "sourceUrl"],
@@ -107,11 +109,12 @@ function parseArguments(argv) {
   if (!options.outputDirectory) throw new Error("--output is required.");
   const artworkChoices =
     Number(Boolean(options.archivePath)) +
+    Number(Boolean(options.artworkInventoryPath)) +
     Number(Boolean(options.artworkDirectory)) +
     Number(Boolean(options.allowMissingArtwork));
   if (artworkChoices !== 1) {
     throw new Error(
-      "Choose exactly one of --archive, --artwork-directory, or --allow-missing-artwork.",
+      "Choose exactly one of --archive, --artwork-inventory, --artwork-directory, or --allow-missing-artwork.",
     );
   }
   if (options.expectedArchiveSha256)

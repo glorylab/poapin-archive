@@ -25,6 +25,10 @@ export async function sha256File(filePath) {
   return hash.digest("hex");
 }
 
+export function sha256Bytes(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 export async function describeFile(filePath, { includeHash = true } = {}) {
   const fileStat = await stat(filePath);
   invariant(fileStat.isFile(), `Expected a file: ${filePath}`);

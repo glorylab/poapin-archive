@@ -65,21 +65,23 @@ export async function importArchive(options) {
     );
   }
 
+  const snapshotId = settings.snapshotId ?? deriveSnapshotId(sourceMetadata);
   settings.onProgress("Inventorying artwork");
   const artwork = await inventoryArtwork({
     archivePath: settings.archivePath,
     artworkDirectory: settings.artworkDirectory,
+    artworkInventoryPath: settings.artworkInventoryPath,
+    artworkInventoryPolicy: settings.artworkInventoryPolicy,
     hashArtworkFiles: settings.hashArtworkFiles,
   });
-  if (settings.expectedArchiveSha256) {
-    invariant(artwork.source.kind === "zip", "--expected-archive-sha256 requires --archive.");
+  if (artwork.source.snapshotId) {
     invariant(
-      artwork.source.sha256 === settings.expectedArchiveSha256,
-      `Archive SHA-256 mismatch: expected ${settings.expectedArchiveSha256}, got ${artwork.source.sha256}.`,
+      artwork.source.snapshotId === snapshotId,
+      `Artwork inventory belongs to ${artwork.source.snapshotId}, not ${snapshotId}.`,
     );
   }
+  const archiveIntegrity = resolveArchiveIntegrity(artwork.source, settings.expectedArchiveSha256);
 
-  const snapshotId = settings.snapshotId ?? deriveSnapshotId(sourceMetadata);
   const artifacts = [];
   artifacts.push(
     await writeStaticArtifact(
@@ -430,8 +432,9 @@ export async function importArchive(options) {
   );
 
   compareMetadataCounts(sourceMetadata, counts.source, quality.metadataMismatches);
-  buildQualityConclusions({ artwork, counts, quality, settings });
+  buildQualityConclusions({ artwork, archiveIntegrity, counts, quality, settings });
 
+  const archiveMetadata = archiveMetaValues(archiveIntegrity);
   const catalogMetadata = {
     artworks_count: counts.accepted.artworks,
     drops_count: counts.accepted.drops,
@@ -444,7 +447,7 @@ export async function importArchive(options) {
     source_database_sha256: databaseDescription.sha256,
     tokens_count: counts.accepted.tokens,
     years: JSON.stringify(sortNumbers(years)),
-    ...(artwork.source.sha256 ? { source_archive_sha256: artwork.source.sha256 } : {}),
+    ...archiveMetadata,
   };
   artifacts.push(
     await writeStaticArtifact(
@@ -463,7 +466,7 @@ export async function importArchive(options) {
     snapshot_id: snapshotId,
     source_database_sha256: databaseDescription.sha256,
     tokens_count: counts.accepted.tokens,
-    ...(artwork.source.sha256 ? { source_archive_sha256: artwork.source.sha256 } : {}),
+    ...archiveMetadata,
   };
   artifacts.push(
     await writeStaticArtifact(
@@ -489,6 +492,7 @@ export async function importArchive(options) {
         ...databaseDescription,
       },
       artwork: artwork.source,
+      archiveIntegrity,
       ...(settings.sourceUrl ? { url: settings.sourceUrl } : {}),
       ...(settings.retrievedAt ? { retrievedAt: settings.retrievedAt } : {}),
       metadata: sourceMetadata,
@@ -573,6 +577,10 @@ function normalizeOptions(options) {
     outputDirectory: resolve(options.outputDirectory),
     archivePath: options.archivePath ? resolve(options.archivePath) : null,
     artworkDirectory: options.artworkDirectory ? resolve(options.artworkDirectory) : null,
+    artworkInventoryPath: options.artworkInventoryPath
+      ? resolve(options.artworkInventoryPath)
+      : null,
+    artworkInventoryPolicy: options.artworkInventoryPolicy ?? null,
     snapshotId: options.snapshotId ?? null,
     sourceUrl: options.sourceUrl ?? null,
     retrievedAt: options.retrievedAt ?? null,
@@ -782,7 +790,55 @@ function compareMetadataCounts(metadata, sourceCounts, mismatches) {
   }
 }
 
-function buildQualityConclusions({ artwork, counts, quality, settings }) {
+function resolveArchiveIntegrity(source, explicitExpectedSha256) {
+  const inventoryExpected = source.kind === "inventory" ? source.expectedSha256 : null;
+  if (explicitExpectedSha256 && inventoryExpected) {
+    invariant(
+      explicitExpectedSha256 === inventoryExpected,
+      `Expected archive SHA-256 differs from the inventory pin: ${inventoryExpected}.`,
+    );
+  }
+  const expectedSha256 = explicitExpectedSha256 ?? inventoryExpected ?? null;
+  const measuredSha256 = source.kind === "zip" ? source.sha256 : (source.measuredSha256 ?? null);
+  if (explicitExpectedSha256 && source.kind !== "zip" && source.kind !== "inventory") {
+    throw new Error("--expected-archive-sha256 requires --archive or --artwork-inventory.");
+  }
+  if (expectedSha256 && measuredSha256) {
+    invariant(
+      measuredSha256 === expectedSha256,
+      `Archive SHA-256 mismatch: expected ${expectedSha256}, got ${measuredSha256}.`,
+    );
+  }
+  if (source.kind === "inventory" && source.wholeArchiveSha256Status === "not-measured") {
+    invariant(measuredSha256 === null, "Range inventory inconsistently claims a measured digest.");
+  }
+  const status = measuredSha256
+    ? expectedSha256
+      ? "verified"
+      : "measured-unpinned"
+    : expectedSha256
+      ? "expected-only-not-measured"
+      : "not-applicable";
+  return {
+    status,
+    expectedSha256,
+    measuredSha256,
+    matchesExpected: expectedSha256 && measuredSha256 ? true : null,
+  };
+}
+
+function archiveMetaValues(integrity) {
+  if (integrity.status === "not-applicable") return {};
+  return {
+    source_archive_sha256_status: integrity.status,
+    ...(integrity.expectedSha256
+      ? { source_archive_expected_sha256: integrity.expectedSha256 }
+      : {}),
+    ...(integrity.measuredSha256 ? { source_archive_sha256: integrity.measuredSha256 } : {}),
+  };
+}
+
+function buildQualityConclusions({ artwork, archiveIntegrity, counts, quality, settings }) {
   const blockers = quality.blockingIssues;
   if (counts.rejected.drops > 0)
     blockers.push(`${counts.rejected.drops} drop row(s) were quarantined.`);
@@ -816,6 +872,11 @@ function buildQualityConclusions({ artwork, counts, quality, settings }) {
   }
   if (!settings.retrievedAt) quality.warnings.push("Source retrieval time was not supplied.");
   if (!settings.sourceUrl) quality.warnings.push("Source acquisition URL was not supplied.");
+  if (archiveIntegrity.status === "expected-only-not-measured") {
+    quality.warnings.push(
+      "The expected whole-archive SHA-256 is pinned but was not measured by the HTTP Range inventory.",
+    );
+  }
   if (quality.media.missingForDrops > 0) {
     quality.warnings.push(
       `${quality.media.missingForDrops} accepted drop(s) have no publishable artwork.`,
