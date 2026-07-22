@@ -21,13 +21,13 @@
     {
       "binding": "CATALOG_DB",
       "database_name": "poapin-archive-catalog",
-      "database_id": "00000000-0000-4000-8000-000000000001",
+      "database_id": "68061691-83a2-45bb-b7e8-64e3bc903b9f",
       "migrations_dir": "migrations/catalog",
     },
     {
       "binding": "HOLDINGS_DB",
       "database_name": "poapin-archive-holdings",
-      "database_id": "00000000-0000-4000-8000-000000000002",
+      "database_id": "1b085d43-c467-4daa-a3f8-8396677dc9ca",
       "migrations_dir": "migrations/holdings",
     },
   ],

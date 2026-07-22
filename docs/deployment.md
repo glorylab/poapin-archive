@@ -38,8 +38,8 @@ npx wrangler r2 bucket create poapin-archive
 ```
 
 Copy the returned D1 database IDs into the matching entries in
-`wrangler.jsonc`. The checked-in IDs are distinct local-only placeholders and
-must never be used for a real deployment.
+`wrangler.jsonc`. The checked-in IDs identify Glory Lab's production resources;
+forks must replace them with databases in their own Cloudflare account.
 
 Confirm that `poap.in` belongs to a zone in the same account. Wrangler is
 configured to attach it as a Worker custom domain. Bind the R2 bucket's custom

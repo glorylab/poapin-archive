@@ -131,10 +131,9 @@ source ZIP by following the [R2 media uploader guide](tools/r2-media-upload/READ
 
 ## Deployment
 
-`wrangler.jsonc` currently names two D1 databases, one R2 bucket, and the
-`poap.in` custom domain. Its two distinct placeholder database IDs must be
-replaced after the remote resources are created in the target Cloudflare
-account.
+`wrangler.jsonc` names the Glory Lab production D1 databases, R2 bucket, and
+`poap.in` custom domain. Forks must create their own resources and replace the
+checked-in database IDs and domain configuration before deploying.
 
 Do not deploy by guessing those values. Follow the one-time provisioning,
 migration, validation, and deployment checklist in
