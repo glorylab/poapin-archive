@@ -42,11 +42,11 @@ Copy the returned D1 database IDs into the matching entries in
 forks must replace them with databases in their own Cloudflare account.
 
 Confirm that `poap.in` belongs to a zone in the same account. Wrangler is
-configured to attach it as a Worker custom domain. Bind the R2 bucket's custom
-domain to `media.poap.in`; media-domain routing remains
-an explicit launch task; do not publish `MEDIA_BASE_URL` until it resolves to
-the intended R2-serving path. Keep the bucket's public `r2.dev` development URL
-disabled so artwork is exposed only through the reviewed custom domain.
+configured to attach it as a Worker custom domain. Glory Lab's production R2
+bucket is already bound to `media.poap.in`; forks must bind their own reviewed
+media domain before publishing `MEDIA_BASE_URL`. Keep the bucket's public
+`r2.dev` development URL disabled so artwork is exposed only through the
+reviewed custom domain.
 
 ## Generate binding types
 
@@ -61,8 +61,8 @@ Commit generated type changes together with the binding change.
 
 ## Apply migrations
 
-The numbered schema is pre-release while the complete source ZIP is still under
-review. Validate every migration locally before remote application:
+The numbered schema backs the published fixed snapshot. Validate every new
+migration locally before remote application:
 
 ```bash
 npx wrangler d1 migrations apply CATALOG_DB --local

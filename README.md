@@ -11,14 +11,14 @@ operational footprint: static React assets at the edge, a Hono API, indexed D1
 lookups, original artwork in R2, and versioned public responses in Workers
 Cache.
 
-The public site will be [`poap.in`](https://poap.in), with immutable archive
+The public site is [`poap.in`](https://poap.in), with immutable archive
 artwork served from [`media.poap.in`](https://media.poap.in).
 
 > [!IMPORTANT]
-> This repository is in active development. The source archive has been
-> inventoried, but the production D1/R2 import and public release have not been
-> completed. Do not treat the site as a canonical or live view of POAP
-> ownership.
+> The public deployment serves a fixed snapshot captured on July 2, 2026, not a
+> canonical or live view of POAP ownership. During the initial publication,
+> original artwork is synchronized progressively; unavailable images fall back
+> to the POAP mark until their immutable R2 object is present.
 
 ## What it is
 
@@ -68,7 +68,7 @@ README. Review the official [Workers limits](https://developers.cloudflare.com/w
 [D1 limits](https://developers.cloudflare.com/d1/platform/limits/),
 [R2 pricing](https://developers.cloudflare.com/r2/pricing/), and
 [Cache documentation](https://developers.cloudflare.com/workers/runtime-apis/cache/)
-before a production import or launch.
+before operating a production deployment.
 
 ## Privacy by default
 

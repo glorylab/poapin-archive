@@ -18,7 +18,8 @@ export function AboutPage({ meta }: { meta: ArchiveMeta | null }) {
           <h2>What is preserved</h2>
           <p>
             Drop metadata, public ownership at the snapshot, reservation aggregates and the original
-            WebP artwork supplied in the archive.
+            WebP artwork supplied in the archive. During progressive publication, unavailable
+            artwork uses a fallback until its immutable object arrives.
           </p>
         </article>
         <article className="about-card glass-panel">

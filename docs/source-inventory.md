@@ -138,5 +138,7 @@ aggregation, and media work outside the Worker request path.
   rendered as plain text.
 - Public blockchain data still creates privacy and enumeration concerns; the
   service intentionally exposes exact-address lookup, not holder discovery.
-- The final D1 sizes, query plans, and rows-read figures must be measured after
-  a complete target import before public activation.
+- The complete production import measured 84.08 MB for the catalog D1 and
+  778.83 MB for the holdings D1; exact-address lookups use the `tokens` primary
+  key. Repeat size, query-plan, and rows-read measurements for every future
+  snapshot.

@@ -19,13 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
--------------------------------------------------------------------------------
-
-Scope notice
-
-The MIT License above covers the original software and documentation in this
-repository. Imported archive datasets, event artwork, logos, names, trademarks,
-and other third-party materials are not part of the "Software" merely because
-this project can import, reference, or display them. No license to those
-materials is granted here. See docs/data-and-licensing.md.

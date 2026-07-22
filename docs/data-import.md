@@ -7,10 +7,12 @@ row-count, and artwork findings.
 
 ## Current status
 
-The initial ZIP and extracted SQLite database have been inventoried. The source
-contains `poap.sqlite` plus `artwork/<drop_id>.webp`; target migrations encode
-the verified schema and required query indexes. A complete target import and
-remote size/query-plan report are still publication gates.
+The `2026-07-02-v1` ZIP and extracted SQLite database have been inventoried. The
+source contains `poap.sqlite` plus `artwork/<drop_id>.webp`; target migrations
+encode the verified schema and required query indexes. The complete D1 import
+has been remotely verified and activated. Original artwork is synchronizing
+progressively to immutable R2 keys; the strict import path for future snapshots
+continues to require a publishable R2 report before activation.
 
 Do not publish a dataset merely because it can be parsed. Provenance, integrity,
 privacy, and redistribution considerations are release gates.
@@ -35,7 +37,7 @@ A generated manifest must describe the file actually obtained, including its
 operator-recorded retrieval time. Store the source ZIP outside Git and keep a
 read-only copy until the published snapshot has been independently verified.
 
-## Proposed pipeline
+## Import pipeline
 
 1. **Acquire** the ZIP over HTTPS and record time, size, headers, and SHA-256.
 2. **Quarantine and inventory** it without executing bundled files. Reject path
