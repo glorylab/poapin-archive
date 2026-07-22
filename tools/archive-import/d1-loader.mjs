@@ -21,6 +21,33 @@ const ROLES = {
   holdings: { tables: ["archive_meta", "tokens", "owner_stats", "import_shards"] },
 };
 
+function parseWranglerJson(stdout) {
+  const source = stdout.trim();
+  const candidates = [0];
+  for (const match of source.matchAll(/\n(?=[{[])/g)) candidates.push(match.index + 1);
+  const parsed = [];
+  for (const offset of candidates) {
+    try {
+      parsed.push(JSON.parse(source.slice(offset)));
+    } catch {
+      // Wrangler may print a human-readable upload prelude before its JSON document.
+    }
+  }
+  if (parsed.length === 1) return parsed[0];
+  throw new Error("Wrangler output does not contain a complete JSON document.");
+}
+
+function assertSuccessfulD1Response(response, targetName) {
+  if (
+    !Array.isArray(response) ||
+    response.length === 0 ||
+    response.some((item) => item?.success !== true)
+  ) {
+    throw new Error(`Wrangler reported an unsuccessful D1 operation for ${targetName}.`);
+  }
+  return response;
+}
+
 const HELP = `POAP.in fail-closed remote D1 loader
 
 Usage:
@@ -272,7 +299,7 @@ async function createWranglerClient(target, options, dependencies) {
       );
     }
     try {
-      return JSON.parse(stdout);
+      return parseWranglerJson(stdout);
     } catch {
       throw new Error(`Wrangler returned invalid JSON for ${target.name}.`);
     }
@@ -293,8 +320,8 @@ async function createWranglerClient(target, options, dependencies) {
     await rm(root, { recursive: true, force: true });
     throw error;
   }
-  const execute = (argument, value) =>
-    runJson([
+  const execute = async (argument, value) => {
+    const response = await runJson([
       "d1",
       "execute",
       "POAP_IMPORT_DB",
@@ -306,6 +333,8 @@ async function createWranglerClient(target, options, dependencies) {
       argument,
       value,
     ]);
+    return assertSuccessfulD1Response(response, target.name);
+  };
   return {
     target,
     async query(sql) {
@@ -505,7 +534,16 @@ async function validateR2Report(context, reportPath, expectedBucket) {
   }
 }
 
-export { loadContext, preflight, load, verify, activate, enforceConfiguredTargetGate };
+export {
+  loadContext,
+  preflight,
+  load,
+  verify,
+  activate,
+  enforceConfiguredTargetGate,
+  parseWranglerJson,
+  assertSuccessfulD1Response,
+};
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {

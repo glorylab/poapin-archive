@@ -5,10 +5,46 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
 
-import { activate, enforceConfiguredTargetGate, load, loadContext, verify } from "../d1-loader.mjs";
+import {
+  activate,
+  assertSuccessfulD1Response,
+  enforceConfiguredTargetGate,
+  load,
+  loadContext,
+  parseWranglerJson,
+  verify,
+} from "../d1-loader.mjs";
 
 const SNAPSHOT = "2026-07-02-v1";
 const SOURCE_SHA = "a".repeat(64);
+
+test("parses Wrangler JSON after its file-upload status prelude", () => {
+  const response = [{ results: [], success: true }];
+  assert.deepEqual(parseWranglerJson(JSON.stringify(response)), response);
+  assert.deepEqual(
+    parseWranglerJson(`├ Checking if file needs uploading\n│\n${JSON.stringify(response)}\n`),
+    response,
+  );
+  assert.throws(
+    () => parseWranglerJson("├ Checking if file needs uploading\n│\nnot-json\n"),
+    /complete JSON document/,
+  );
+  assert.throws(
+    () => parseWranglerJson(`${JSON.stringify(response)}\ntrailing output\n`),
+    /complete JSON document/,
+  );
+});
+
+test("rejects empty, malformed, or unsuccessful D1 responses", () => {
+  const response = [{ results: [], success: true }];
+  assert.equal(assertSuccessfulD1Response(response, "fixture"), response);
+  for (const rejected of [[], {}, [{ success: false }], [{ results: [] }]]) {
+    assert.throws(
+      () => assertSuccessfulD1Response(rejected, "fixture"),
+      /unsuccessful D1 operation/,
+    );
+  }
+});
 
 test("stops on the first failed shard, resumes from remote markers, and activates last", async () => {
   const root = await mkdtemp(resolve(tmpdir(), "poapin-d1-loader-test-"));
