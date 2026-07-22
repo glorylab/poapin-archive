@@ -48,8 +48,9 @@ R2 target (not required with --dry-run):
   --account-id <id>         Cloudflare account ID; defaults to R2_ACCOUNT_ID.
   --endpoint <https-url>    Override R2 S3 endpoint; defaults to R2_ENDPOINT.
 
-Credentials are read only from R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY.
-They are intentionally not accepted as flags or written to logs/reports.
+Credentials are read only from R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and the
+optional R2_SESSION_TOKEN used by temporary credentials. They are intentionally
+not accepted as flags or written to logs/reports.
 
 Run control:
   --concurrency <1-16>      Concurrent decompression/upload tasks (default: 4).

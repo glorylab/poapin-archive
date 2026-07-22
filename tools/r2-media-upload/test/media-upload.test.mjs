@@ -7,10 +7,12 @@ import { Readable } from "node:stream";
 import test from "node:test";
 import { deflateRawSync } from "node:zlib";
 
+import { parseCliOptions } from "../cli.mjs";
 import { JsonlCheckpoint, createMemoryCheckpoint } from "../lib/checkpoint.mjs";
 import { createMemoryManifest, loadArtworkManifest } from "../lib/manifest.mjs";
 import { uploadArtworkArchive } from "../lib/pipeline.mjs";
 import {
+  createR2Target,
   ExistingObjectConflictError,
   ImmutableR2Uploader,
   redactErrorMessage,
@@ -218,10 +220,71 @@ test("R2 refuses an existing object whose digest does not match", async () => {
 
 test("error messages redact credentials and signed query values", () => {
   const secret = "super-secret-value";
-  const error = new Error(`request failed for ${secret}?token=visible`);
-  const message = redactErrorMessage(error, [secret]);
+  const sessionToken = "temporary-session-token";
+  const error = new Error(`request failed for ${secret}/${sessionToken}?token=visible`);
+  const message = redactErrorMessage(error, [secret, sessionToken]);
   assert.equal(message.includes(secret), false);
+  assert.equal(message.includes(sessionToken), false);
   assert.match(message, /token=\[redacted\]/);
+});
+
+test("R2 target reads a session token from the environment, passes it to the SDK, and redacts it", async () => {
+  const sessionToken = "temporary-session-token-value";
+  const previousSessionToken = process.env.R2_SESSION_TOKEN;
+  process.env.R2_SESSION_TOKEN = sessionToken;
+  let target;
+  try {
+    target = createR2Target({
+      endpoint: "https://example.r2.cloudflarestorage.com",
+      bucket: "poapin-archive",
+      accessKeyId: "temporary-access-key",
+      secretAccessKey: "temporary-secret-key",
+    });
+    const credentials = await target.client.config.credentials();
+    assert.equal(credentials.accessKeyId, "temporary-access-key");
+    assert.equal(credentials.secretAccessKey, "temporary-secret-key");
+    assert.equal(credentials.sessionToken, sessionToken);
+    assert.equal(target.secrets.includes(sessionToken), true);
+    assert.equal(redactErrorMessage(new Error(sessionToken), target.secrets), "[redacted]");
+  } finally {
+    target?.client.destroy();
+    if (previousSessionToken === undefined) delete process.env.R2_SESSION_TOKEN;
+    else process.env.R2_SESSION_TOKEN = previousSessionToken;
+  }
+});
+
+test("R2 target remains compatible with long-lived credentials", async () => {
+  const target = createR2Target({
+    endpoint: "https://example.r2.cloudflarestorage.com",
+    bucket: "poapin-archive",
+    accessKeyId: "long-lived-access-key",
+    secretAccessKey: "long-lived-secret-key",
+    sessionToken: undefined,
+  });
+  try {
+    const credentials = await target.client.config.credentials();
+    assert.equal(credentials.accessKeyId, "long-lived-access-key");
+    assert.equal(credentials.secretAccessKey, "long-lived-secret-key");
+    assert.equal(credentials.sessionToken, undefined);
+    assert.deepEqual(target.secrets, ["long-lived-access-key", "long-lived-secret-key"]);
+  } finally {
+    target.client.destroy();
+  }
+});
+
+test("CLI rejects session tokens as arguments", () => {
+  assert.throws(
+    () =>
+      parseCliOptions([
+        "--snapshot-id",
+        SNAPSHOT_ID,
+        "--manifest",
+        "artwork-manifest.ndjson",
+        "--session-token",
+        "must-not-be-accepted",
+      ]),
+    /Unknown option '--session-token'/,
+  );
 });
 
 test("manifest loading preserves the reviewed object key and rejects an old unscoped key", async () => {

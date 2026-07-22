@@ -23,6 +23,7 @@ export function createR2Target({
   bucket = process.env.R2_BUCKET,
   accessKeyId = process.env.R2_ACCESS_KEY_ID,
   secretAccessKey = process.env.R2_SECRET_ACCESS_KEY,
+  sessionToken = process.env.R2_SESSION_TOKEN,
 } = {}) {
   if (!bucket || !/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(bucket)) {
     throw new R2ConfigurationError("R2_BUCKET/--bucket must be a valid lowercase R2 bucket name.");
@@ -64,7 +65,11 @@ export function createR2Target({
   const client = new S3Client({
     region: "auto",
     endpoint: endpointUrl.href,
-    credentials: { accessKeyId, secretAccessKey },
+    credentials: {
+      accessKeyId,
+      secretAccessKey,
+      ...(sessionToken ? { sessionToken } : {}),
+    },
     forcePathStyle: true,
     maxAttempts: 1,
     requestChecksumCalculation: "WHEN_REQUIRED",
@@ -75,7 +80,7 @@ export function createR2Target({
     bucket,
     endpoint: endpointUrl.origin,
     client,
-    secrets: [accessKeyId, secretAccessKey],
+    secrets: [accessKeyId, secretAccessKey, sessionToken].filter(Boolean),
   };
 }
 

@@ -35,11 +35,17 @@ export R2_ACCOUNT_ID="<cloudflare-account-id>"
 export R2_BUCKET="poapin-archive"
 export R2_ACCESS_KEY_ID="<r2-access-key-id>"
 export R2_SECRET_ACCESS_KEY="<r2-secret-access-key>"
+# Required only for Cloudflare-issued temporary credentials:
+export R2_SESSION_TOKEN="<r2-session-token>"
 ```
 
-The tool intentionally has no credential flags, and credentials are redacted
-from surfaced SDK errors. Use a short-lived operator session or secret manager
-where possible, then clear the environment when the run is complete.
+`R2_SESSION_TOKEN` is optional for long-lived R2 API token credentials and
+required when the access key and secret were issued as temporary S3
+credentials. The tool intentionally has no credential flags. It never writes
+credentials to logs, reports, or checkpoints, and all three credential values
+are redacted from surfaced SDK errors. Use a short-lived operator session or
+secret manager where possible, then clear all credential environment variables
+when the run is complete.
 
 ## Dry run
 
