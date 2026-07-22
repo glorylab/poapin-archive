@@ -1,0 +1,65 @@
+name: Bug report
+description: Report a reproducible problem in the browser, API, import, or export.
+title: "bug: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve the archive. Do not include secrets or a
+        wallet history you do not have permission to share. Security issues
+        belong in the private channel described in SECURITY.md.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Browsing and search
+        - Drop details or artwork
+        - Address lookup or export
+        - API
+        - Data import
+        - Deployment
+        - Accessibility
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happened?
+      description: Include the route, snapshot ID, and exact error when available.
+      placeholder: I expected ... but instead ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Give the smallest sequence that reproduces the issue.
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser, device, deployment, commit, and relevant configuration.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues for a duplicate.
+          required: true
+        - label: This report does not contain secrets or unnecessary personal data.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true

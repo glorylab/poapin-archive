@@ -1,0 +1,52 @@
+name: Data or artwork report
+description: Report a snapshot accuracy, provenance, attribution, or artwork issue.
+title: "data: "
+body:
+  - type: input
+    id: snapshot
+    attributes:
+      label: Snapshot ID
+      description: The snapshot shown by the site or API.
+      placeholder: 2026-07-02-v1
+    validations:
+      required: true
+
+  - type: input
+    id: record
+    attributes:
+      label: Record
+      description: Drop ID, token ID, artwork key, or public URL.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Issue type
+      options:
+        - Incorrect metadata
+        - Missing record
+        - Missing or incorrect artwork
+        - Attribution or provenance
+        - Removal request
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Details and evidence
+      description: Explain the concern and link to a reliable source when possible. Do not include private data.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I understand this archive is a dated snapshot, not a live ownership index.
+          required: true
+        - label: This report contains no secret or unnecessary personal data.
+          required: true

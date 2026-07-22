@@ -1,0 +1,69 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "poapin-archive",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-03-10",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "poap.in",
+      "custom_domain": true,
+    },
+  ],
+  "assets": {
+    "directory": "./dist/client",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+  "d1_databases": [
+    {
+      "binding": "CATALOG_DB",
+      "database_name": "poapin-archive-catalog",
+      "database_id": "00000000-0000-4000-8000-000000000001",
+      "migrations_dir": "migrations/catalog",
+    },
+    {
+      "binding": "HOLDINGS_DB",
+      "database_name": "poapin-archive-holdings",
+      "database_id": "00000000-0000-4000-8000-000000000002",
+      "migrations_dir": "migrations/holdings",
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "ARCHIVE_BUCKET",
+      "bucket_name": "poapin-archive",
+    },
+  ],
+  "ratelimits": [
+    {
+      "name": "BROWSE_RATE_LIMITER",
+      "namespace_id": "71022001",
+      "simple": { "limit": 120, "period": 60 },
+    },
+    {
+      "name": "OWNER_RATE_LIMITER",
+      "namespace_id": "71022002",
+      "simple": { "limit": 60, "period": 60 },
+    },
+    {
+      "name": "EXPORT_RATE_LIMITER",
+      "namespace_id": "71022003",
+      "simple": { "limit": 3, "period": 60 },
+    },
+  ],
+  "vars": {
+    "SNAPSHOT_ID": "2026-07-02-v1",
+    "API_CACHE_VERSION": "v1",
+    "MEDIA_BASE_URL": "https://media.poap.in",
+  },
+  "limits": {
+    "cpu_ms": 250,
+  },
+  "observability": {
+    "enabled": false,
+  },
+  "upload_source_maps": true,
+}

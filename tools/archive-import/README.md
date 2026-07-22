@@ -1,0 +1,168 @@
+# Offline archive import
+
+This tool converts the immutable `poap.sqlite` snapshot into bounded SQL files
+for the two D1 databases and a machine-readable R2 artwork manifest. It is an
+operator-side data job: it does not make network requests, upload media, mutate
+Cloudflare resources, or run inside a Worker.
+
+## Requirements
+
+- Node.js 22 or newer;
+- the `sqlite3` command-line client with JSON1 and FTS5 support;
+- enough free space for the generated SQL (the holdings output is large); and
+- either the original archive ZIP or an extracted artwork directory.
+
+Keep the source files outside Git. The repository ignores SQLite databases,
+archive ZIPs, artwork, `data/`, and `import-reports/`.
+
+## Generate an import
+
+Use a new or empty output directory. Supplying expected digests makes checksum
+failure an immediate hard error. `--retrieved-at` must describe acquisition,
+not the time at which this command happens to run.
+
+```sh
+node tools/archive-import/cli.mjs \
+  --database /absolute/path/to/poap.sqlite \
+  --archive /absolute/path/to/archive.zip \
+  --output /absolute/path/to/import-reports/2026-07-02-v1 \
+  --source-url https://downloads.poaparchive.com/archive.zip \
+  --expected-database-sha256 <64-lowercase-hex> \
+  --expected-archive-sha256 <64-lowercase-hex> \
+  --retrieved-at 2026-07-22T00:00:00Z
+```
+
+For already extracted artwork, replace `--archive` with:
+
+```sh
+--artwork-directory /absolute/path/to/artwork
+```
+
+Directory input hashes every original WebP. ZIP input hashes the complete ZIP
+and records each entry's uncompressed size, compressed size, compression
+method, and CRC-32. Use `--skip-artwork-hashes` only when a separate verified
+content manifest exists. Metadata-only development runs must explicitly pass
+`--allow-missing-artwork` and remain publish-blocking unless the flag was
+deliberate.
+
+The command derives `2026-07-02-v1` from `snapshot_at` and source schema version
+unless `--snapshot-id` is supplied. The media base defaults to
+`https://media.poap.in`.
+
+## Outputs
+
+```text
+<output>/
+├── catalog/
+│   ├── 000000_prepare.sql
+│   ├── 100001_drops.sql ...
+│   ├── 200001_drop_stats.sql ...
+│   └── 999999_finalize.sql
+├── holdings/
+│   ├── 000000_prepare.sql
+│   ├── 100001_tokens.sql ...
+│   ├── 800001_owner_stats.sql ...
+│   └── 999999_finalize.sql
+├── quality/
+│   ├── rejected-drops.ndjson
+│   ├── rejected-tokens.ndjson
+│   ├── rejected-email-reservation-stats.ndjson
+│   └── rejected-owner-stats.ndjson
+├── r2/artwork-manifest.ndjson
+└── report.json
+```
+
+`report.json` records source metadata and checksums, target counts, normalized
+owner counts, network distribution, duplicate POAP IDs, orphan relationships,
+media coverage, every artifact's byte length and SHA-256, warnings, and
+publish-blocking issues. The CLI exits with status 2 after writing the report
+when review is required.
+
+Every R2 manifest row carries `snapshotId`. The manifest uses snapshot-isolated immutable keys in the form
+`snapshots/{snapshotId}/artwork/{dropId}.webp` and contains upload metadata plus
+`eligibleForPublish`. It is an object list, not an upload instruction; an
+uploader must skip any row where that flag is false.
+
+After review, use the separate [R2 media uploader](../r2-media-upload/README.md),
+which consumes this manifest verbatim and maintains a resumable checkpoint.
+
+## Transformation contract
+
+- Rows are read in stable primary-key order and output with stable column order.
+- Owner addresses are checked as 20-byte hexadecimal addresses and normalized
+  to lowercase. Only `owner_address_norm` is loaded; the redundant raw source
+  address is not copied into D1.
+- `drop_id` and `minted_on` are required in the target holdings table. Invalid
+  source rows are quarantined instead of being silently coerced.
+- `drops.token_count` and `drops.has_artwork` are populated from accepted token
+  rows and the verified media inventory. `drop_stats` contains only valid email
+  reservation totals for every accepted drop.
+- `owner_stats` is computed by SQLite with `lower(owner_address)`, bounded disk
+  temporary storage, and deterministic address ordering. Null timestamps would
+  normalize to zero, but target validation rejects null source timestamps first.
+- The importer checks both the source primary-key declaration and the complete
+  dataset for global `source_uid` uniqueness. The 51 known duplicate `poap_id`
+  values are preserved; `source_uid` is the stable pagination tie-breaker.
+- The same inputs, options, Node/sqlite versions, and importer version produce
+  the same logical output. No wall-clock timestamp is invented.
+
+## Why the files are shaped this way
+
+D1 has per-statement and import-file limits. Multi-row inserts are capped at 100
+rows and 90 KiB by default; shards are capped at 8 MiB. A single source row that
+cannot fit below the statement ceiling fails the run rather than being
+truncated. These values can be lowered with `--rows-per-statement`,
+`--max-statement-kib`, and `--max-shard-mib`.
+
+The schema migration already creates catalog FTS triggers. Holdings are emitted
+in `(owner_address_norm, poap_id DESC, source_uid DESC)` order, matching the
+`WITHOUT ROWID` clustered primary key that directly serves public pagination.
+There is no redundant owner secondary index to rebuild. Small insert batches
+cost more total import time but fail and retry at safe boundaries. Production
+imports belong in fresh staging databases, never the currently active resources.
+
+`archive_meta` is removed by each prepare shard and restored only by each final
+shard. Both databases record the same `snapshot_id`, schema/importer versions,
+source digest, and relevant counts. API reads therefore see an unavailable or
+mismatched archive rather than a half-loaded snapshot.
+
+## Local verification
+
+The verifier checks every artifact digest, applies the production schema and all
+shards to scratch SQLite databases, runs integrity/count/aggregate checks, and
+confirms that owner pagination uses the clustered primary key:
+
+```sh
+node tools/archive-import/verify.mjs \
+  --input /absolute/path/to/import-reports/2026-07-02-v1
+```
+
+For the full snapshot this requires substantial temporary disk space. Scratch
+databases are deleted after a successful or failed verification.
+
+Run the small deterministic fixture test without adding project dependencies:
+
+```sh
+node --test tools/archive-import/test/*.test.mjs
+```
+
+## Remote D1 loading
+
+First create fresh staging D1 databases and apply the checked-in migrations.
+Then execute every generated file in lexical order. For example, from the
+project root:
+
+```sh
+for file in /absolute/path/to/import-output/catalog/*.sql; do
+  npx wrangler d1 execute CATALOG_DB --remote --file "$file"
+done
+
+for file in /absolute/path/to/import-output/holdings/*.sql; do
+  npx wrangler d1 execute HOLDINGS_DB --remote --file "$file"
+done
+```
+
+Before activating a snapshot, compare remote counts with `report.json`, upload
+only eligible R2 objects, verify public media responses, and retain the report.
+Never run prepare shards against an active database: they intentionally remove
+the development seed or any other rows in that staging database.
