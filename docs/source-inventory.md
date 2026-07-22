@@ -43,7 +43,9 @@ Observed properties:
 
 - years range from 2014 through 2026;
 - 40,003 rows are virtual, 32,677 are in person, and 1,196 have unknown
-  `is_virtual` state; and
+  `is_virtual` state;
+- drop `30` has an empty `fancy_id`; it is preserved because `drop_id` is the
+  stable public identifier and the empty value remains unique; and
 - every row has `is_private = 0` in this snapshot.
 
 ### `tokens` — 6,218,154 rows
@@ -130,6 +132,8 @@ aggregation, and media work outside the Worker request path.
 - The snapshot is historical and must not be presented as current ownership.
 - Unknown event type is distinct from in-person or virtual.
 - Missing artwork is expected for 81 drops and requires a UI fallback.
+- One early drop has an empty source `fancy_id`; clients must not treat that
+  optional display slug as an identifier.
 - Source URLs and descriptions are untrusted input and must be validated or
   rendered as plain text.
 - Public blockchain data still creates privacy and enumeration concerns; the

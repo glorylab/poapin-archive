@@ -63,6 +63,8 @@ test("generates deterministic D1 shards, quality report, and R2 manifest", async
       artworks: 2,
     });
     assert.deepEqual(first.report.quality.blockingIssues, []);
+    assert.equal(first.report.quality.drops.emptyFancyIds, 1);
+    assert.match(first.report.quality.warnings.join("\n"), /empty source fancy_id/);
     assert.equal(first.report.quality.tokens.normalizedAddressesChanged, 2);
     assert.equal(first.report.quality.tokens.duplicatePoapIds, 1);
     assert.equal(first.report.quality.tokens.duplicatePoapExtraRows, 1);
@@ -265,7 +267,7 @@ CREATE TABLE email_reservation_stats (
 CREATE TABLE snapshot_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 INSERT INTO drops VALUES
-  (1, 'first', 'First', 'Kira''s first POAP', '2026-07-01T00:00:00.000Z', '2026-07-01T00:00:00.000Z', 'Tokyo', 'Japan', 'https://poap.in', 2026, 0, 0, NULL, NULL, NULL, 'Asia/Tokyo', '2026-07-01T00:00:00.000Z'),
+  (1, '', 'First', 'Kira''s first POAP', '2026-07-01T00:00:00.000Z', '2026-07-01T00:00:00.000Z', 'Tokyo', 'Japan', 'https://poap.in', 2026, 0, 0, NULL, NULL, NULL, 'Asia/Tokyo', '2026-07-01T00:00:00.000Z'),
   (2, 'second', 'Second', 'Line one\nLine two', '2025-01-01T00:00:00.000Z', '2025-01-02T00:00:00.000Z', NULL, NULL, NULL, 2025, 1, 0, 'community', 'online', 'virtual', 'UTC', '2025-01-01T00:00:00.000Z');
 INSERT INTO tokens VALUES
   ('00000000000000000000000000000001', 100, 1, 1751328000, '0xAbCdEf0000000000000000000000000000000000', 'xdai', 1),

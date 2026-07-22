@@ -183,6 +183,7 @@ export async function importArchive(options) {
   const quality = {
     artwork: artwork.quality,
     drops: {
+      emptyFancyIds: 0,
       emptyTitles: 0,
       invalidDates: 0,
       reversedDateRanges: 0,
@@ -688,8 +689,7 @@ function makeSqlWriter(settings, config) {
 function validateDrop(row) {
   const reasons = [];
   if (!isSafeInteger(row.drop_id, { minimum: 1 })) reasons.push("invalid_drop_id");
-  if (typeof row.fancy_id !== "string" || row.fancy_id.length === 0)
-    reasons.push("invalid_fancy_id");
+  if (typeof row.fancy_id !== "string") reasons.push("invalid_fancy_id");
   if (typeof row.title !== "string") reasons.push("invalid_title");
   for (const field of [
     "description",
@@ -714,6 +714,7 @@ function validateDrop(row) {
 }
 
 function observeDropQuality(row, quality) {
+  if (row.fancy_id.length === 0) quality.emptyFancyIds += 1;
   if (row.title.length === 0) quality.emptyTitles += 1;
   const start = Date.parse(row.start_date);
   const end = Date.parse(row.end_date);
@@ -883,6 +884,11 @@ function buildQualityConclusions({ artwork, archiveIntegrity, counts, quality, s
   if (archiveIntegrity.status === "expected-only-not-measured") {
     quality.warnings.push(
       "The expected whole-archive SHA-256 is pinned but was not measured by the HTTP Range inventory.",
+    );
+  }
+  if (quality.drops.emptyFancyIds > 0) {
+    quality.warnings.push(
+      `${quality.drops.emptyFancyIds} accepted drop(s) preserve an empty source fancy_id; drop_id remains the stable identifier.`,
     );
   }
   if (quality.media.missingForDrops > 0) {
