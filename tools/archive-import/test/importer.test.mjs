@@ -91,6 +91,16 @@ test("generates deterministic D1 shards, quality report, and R2 manifest", async
     ).join("\n");
     assert.match(holdingSql, /"owner_address_norm"/);
     assert.doesNotMatch(holdingSql, /"owner_address",/);
+    assert.match(holdingSql, /INSERT INTO "import_shards"/);
+    assert.ok(
+      first.report.artifacts
+        .filter((artifact) => artifact.phase === "load")
+        .every((artifact) => /^[0-9a-f]{64}$/.test(artifact.payloadSha256)),
+    );
+    assert.doesNotMatch(
+      await readFile(resolve(outputOne, "holdings/999999_finalize.sql"), "utf8"),
+      /COUNT\(\*\)/,
+    );
 
     const verification = await verifyImportOutput({
       inputDirectory: outputOne,

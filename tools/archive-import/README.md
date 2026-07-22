@@ -182,21 +182,66 @@ node --test tools/archive-import/test/*.test.mjs
 
 ## Remote D1 loading
 
-First create fresh staging D1 databases and apply the checked-in migrations.
-Then execute every generated file in lexical order. For example, from the
-project root:
+The complete snapshot requires the Workers Paid plan. Its holdings database and
+write volume exceed the D1 Free limits; do not start the production import on a
+Free account. Create fresh, snapshot-scoped staging D1 databases and apply the
+checked-in migrations before running the loader.
+
+The loader identifies each remote database by both its name and UUID. It does
+not use `CATALOG_DB` or `HOLDINGS_DB` bindings, and refuses to continue when
+`wrangler d1 info` does not return the exact requested identity. Run the four
+phases from the project root:
 
 ```sh
-for file in /absolute/path/to/import-output/catalog/*.sql; do
-  npx wrangler d1 execute CATALOG_DB --remote --file "$file"
-done
+node tools/archive-import/d1-loader.mjs preflight \
+  --input /absolute/path/to/import-output \
+  --catalog-name poapin-cat-20260702-v1 \
+  --catalog-id <catalog-d1-uuid> \
+  --holdings-name poapin-hold-20260702-v1 \
+  --holdings-id <holdings-d1-uuid>
 
-for file in /absolute/path/to/import-output/holdings/*.sql; do
-  npx wrangler d1 execute HOLDINGS_DB --remote --file "$file"
-done
+node tools/archive-import/d1-loader.mjs load \
+  --input /absolute/path/to/import-output \
+  --catalog-name poapin-cat-20260702-v1 \
+  --catalog-id <catalog-d1-uuid> \
+  --holdings-name poapin-hold-20260702-v1 \
+  --holdings-id <holdings-d1-uuid>
+
+node tools/archive-import/d1-loader.mjs verify \
+  --input /absolute/path/to/import-output \
+  --catalog-name poapin-cat-20260702-v1 \
+  --catalog-id <catalog-d1-uuid> \
+  --holdings-name poapin-hold-20260702-v1 \
+  --holdings-id <holdings-d1-uuid>
+
+node tools/archive-import/d1-loader.mjs activate \
+  --input /absolute/path/to/import-output \
+  --catalog-name poapin-cat-20260702-v1 \
+  --catalog-id <catalog-d1-uuid> \
+  --holdings-name poapin-hold-20260702-v1 \
+  --holdings-id <holdings-d1-uuid> \
+  --r2-report /absolute/path/to/r2-upload-report.json \
+  --r2-bucket poapin-archive
 ```
 
-Before activating a snapshot, compare remote counts with `report.json`, upload
-only eligible R2 objects, verify public media responses, and retain the report.
-Never run prepare shards against an active database: they intentionally remove
-the development seed or any other rows in that staging database.
+`load` applies prepare and data shards only; it deliberately excludes both
+`999999_finalize.sql` files. Each data shard and its `import_shards` completion
+marker commit in the same D1 import transaction. Resume checks those remote
+markers, rather than trusting a local checkpoint alone, and stops at the first
+failed shard. `verify` compares the remote state with `report.json`. `activate`
+is the only phase allowed to apply finalizers, and requires the successful R2
+upload report in addition to the completed D1 verification.
+
+The D1 UUIDs currently present in `wrangler.jsonc` are configured Worker
+targets. Using either of them for an initial, still-empty import requires both
+explicit acknowledgements on every loader command:
+
+```text
+--allow-configured-empty-target --confirm-worker-not-activated
+```
+
+The first flag does not permit replacing a populated database; the second is an
+operator assertion that no deployed Worker version is serving the target. If
+either statement is untrue, create new staging databases instead. Generated
+prepare shards are non-destructive, but they are not a way to sanitize or reuse
+an existing database.

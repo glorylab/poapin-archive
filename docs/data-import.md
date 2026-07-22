@@ -46,14 +46,17 @@ read-only copy until the published snapshot has been independently verified.
 4. **Document rights and provenance** for records and artwork separately.
 5. **Normalize offline** into deterministic catalog, holdings, and media
    manifests. Preserve source identifiers alongside normalized values.
-6. **Load staging resources** in bounded transactions with all required indexes.
+6. **Preflight and load staging resources** with the D1 loader on a Workers Paid
+   account. Require exact database name/UUID matches, an empty target, and all
+   required migrations before applying bounded shards.
 7. **Upload media** to immutable
    `snapshots/<snapshot-id>/artwork/<drop_id>.webp` R2 keys and verify size and
    digest after upload.
 8. **Validate** counts, uniqueness, foreign references, date ranges, address
    normalization, media coverage, query plans, and representative exports.
-9. **Publish** snapshot metadata and activate the snapshot only after every
-   required artifact exists.
+9. **Activate** with the D1 loader only after remote D1 verification and a
+   successful R2 upload report. The load phase must not publish snapshot
+   metadata or execute finalizer shards.
 10. **Retain a report** containing input checksum, importer commit, record totals,
     rejected rows, validation results, and activation time.
 
@@ -93,6 +96,80 @@ Every transformation must be explicit and testable. In particular:
 The same input checksum and importer commit must produce the same logical
 output. A retry may upsert identical staged data, but it must not duplicate
 records or overwrite an active snapshot.
+
+## Remote D1 loader contract
+
+The full archive cannot be imported within D1 Free limits. A Workers Paid plan
+is required before preflight: the holdings database exceeds the Free per-database
+storage allowance, and the import writes millions of rows. See the current
+[D1 limits](https://developers.cloudflare.com/d1/platform/limits/) and
+[D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/).
+
+Use fresh, snapshot-scoped database names and retain their UUIDs in the import
+record. The loader takes both values and verifies the pair remotely; it never
+selects a target through the application's D1 bindings. From the project root,
+run:
+
+```sh
+node tools/archive-import/d1-loader.mjs preflight \
+  --input /absolute/path/to/import-output \
+  --catalog-name poapin-cat-20260702-v1 \
+  --catalog-id <catalog-d1-uuid> \
+  --holdings-name poapin-hold-20260702-v1 \
+  --holdings-id <holdings-d1-uuid>
+
+node tools/archive-import/d1-loader.mjs load \
+  --input /absolute/path/to/import-output \
+  --catalog-name poapin-cat-20260702-v1 \
+  --catalog-id <catalog-d1-uuid> \
+  --holdings-name poapin-hold-20260702-v1 \
+  --holdings-id <holdings-d1-uuid>
+
+node tools/archive-import/d1-loader.mjs verify \
+  --input /absolute/path/to/import-output \
+  --catalog-name poapin-cat-20260702-v1 \
+  --catalog-id <catalog-d1-uuid> \
+  --holdings-name poapin-hold-20260702-v1 \
+  --holdings-id <holdings-d1-uuid>
+
+node tools/archive-import/d1-loader.mjs activate \
+  --input /absolute/path/to/import-output \
+  --catalog-name poapin-cat-20260702-v1 \
+  --catalog-id <catalog-d1-uuid> \
+  --holdings-name poapin-hold-20260702-v1 \
+  --holdings-id <holdings-d1-uuid> \
+  --r2-report /absolute/path/to/r2-upload-report.json \
+  --r2-bucket poapin-archive
+```
+
+`preflight` verifies identity, schema, emptiness, plan integrity, and the absence
+of published metadata. `load` executes prepare and data artifacts in reviewed
+order but excludes `999999_finalize.sql`. Every shard writes its
+`import_shards` marker in the same atomic D1 file import as its rows. A resumed
+run treats those remote markers as the source of truth; a local journal alone
+cannot distinguish a failed request from an import that committed before the
+client disconnected. The loader must stop on the first unconfirmed shard.
+
+`verify` is a read-only publication gate that compares the atomic remote shard
+markers and snapshot identity with `report.json`; offline verification remains
+responsible for full counts, integrity checks, and query plans. After the media
+uploader has produced a complete, publishable report,
+`activate --r2-report ... --r2-bucket ...` validates that report and applies the holdings and
+catalog finalizers. No earlier phase may create the `archive_meta` readiness
+marker.
+
+The database IDs currently checked into `wrangler.jsonc` are already configured
+as Worker targets. An initial import into either configured target is allowed
+only while it is empty and no deployed Worker is serving it, and every loader
+phase requires both acknowledgements:
+
+```text
+--allow-configured-empty-target --confirm-worker-not-activated
+```
+
+These flags are not a force option. They cannot authorize clearing a populated
+database or replacing an active snapshot. Create new staging databases whenever
+either condition cannot be proven.
 
 ## Media keys
 

@@ -13,7 +13,7 @@ const SQLITE_BINARY = process.env.POAP_SQLITE3 || "sqlite3";
 export async function verifyImportOutput({ inputDirectory, migrationsRoot }) {
   const inputRoot = resolve(inputDirectory);
   const report = JSON.parse(await readFile(resolve(inputRoot, "report.json"), "utf8"));
-  invariant(report.formatVersion === 1, `Unsupported report format: ${report.formatVersion}`);
+  invariant(report.formatVersion === 2, `Unsupported report format: ${report.formatVersion}`);
 
   for (const artifact of report.artifacts) {
     const actual = await sha256File(resolve(inputRoot, artifact.path));
@@ -26,14 +26,10 @@ export async function verifyImportOutput({ inputDirectory, migrationsRoot }) {
   try {
     const catalogSql = await sqlFiles(resolve(inputRoot, "catalog"));
     const holdingsSql = await sqlFiles(resolve(inputRoot, "holdings"));
-    await applySqlFiles(catalogDatabase, [
-      resolve(migrationsRoot, "catalog/0001_schema.sql"),
-      ...catalogSql,
-    ]);
-    await applySqlFiles(holdingsDatabase, [
-      resolve(migrationsRoot, "holdings/0001_schema.sql"),
-      ...holdingsSql,
-    ]);
+    const catalogMigrations = await sqlFiles(resolve(migrationsRoot, "catalog"));
+    const holdingsMigrations = await sqlFiles(resolve(migrationsRoot, "holdings"));
+    await applySqlFiles(catalogDatabase, [...catalogMigrations, ...catalogSql]);
+    await applySqlFiles(holdingsDatabase, [...holdingsMigrations, ...holdingsSql]);
 
     const [catalog] = await queryJsonRows(
       catalogDatabase,

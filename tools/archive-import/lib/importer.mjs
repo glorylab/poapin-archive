@@ -31,7 +31,7 @@ import {
   sortedEntries,
 } from "./util.mjs";
 
-const FORMAT_VERSION = 1;
+const FORMAT_VERSION = 2;
 const DEFAULT_MEDIA_BASE_URL = "https://media.poap.in";
 
 export async function importArchive(options) {
@@ -144,6 +144,8 @@ export async function importArchive(options) {
     label: "drops",
     table: "drops",
     columns: DROP_COLUMNS,
+    database: "catalog",
+    journal: { snapshotId, sourceDatabaseSha256: databaseDescription.sha256 },
   });
   const tokenWriter = makeSqlWriter(settings, {
     relativeDirectory: "holdings",
@@ -151,6 +153,8 @@ export async function importArchive(options) {
     label: "tokens",
     table: "tokens",
     columns: TOKEN_COLUMNS,
+    database: "holdings",
+    journal: { snapshotId, sourceDatabaseSha256: databaseDescription.sha256 },
   });
   const dropStatsWriter = makeSqlWriter(settings, {
     relativeDirectory: "catalog",
@@ -158,6 +162,8 @@ export async function importArchive(options) {
     label: "drop_stats",
     table: "drop_stats",
     columns: DROP_STATS_COLUMNS,
+    database: "catalog",
+    journal: { snapshotId, sourceDatabaseSha256: databaseDescription.sha256 },
   });
   const ownerStatsWriter = makeSqlWriter(settings, {
     relativeDirectory: "holdings",
@@ -165,6 +171,8 @@ export async function importArchive(options) {
     label: "owner_stats",
     table: "owner_stats",
     columns: OWNER_STATS_COLUMNS,
+    database: "holdings",
+    journal: { snapshotId, sourceDatabaseSha256: databaseDescription.sha256 },
   });
 
   const counts = {

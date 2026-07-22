@@ -32,6 +32,8 @@ export class SqlShardWriter {
     maxShardBytes,
     maxStatementBytes,
     rowsPerStatement,
+    database,
+    journal,
   }) {
     this.outputRoot = resolve(outputRoot);
     this.directory = resolve(outputRoot, relativeDirectory);
@@ -43,6 +45,8 @@ export class SqlShardWriter {
     this.maxShardBytes = maxShardBytes;
     this.maxStatementBytes = maxStatementBytes;
     this.rowsPerStatement = rowsPerStatement;
+    this.database = database;
+    this.journal = journal;
     this.pendingRows = [];
     this.pendingBytes = 0;
     this.current = null;
@@ -87,10 +91,29 @@ export class SqlShardWriter {
       `${this.table}: statement exceeds configured limit.`,
     );
 
-    if (this.current && this.current.byteLength + byteLength > this.maxShardBytes) {
+    if (
+      this.current &&
+      this.current.byteLength +
+        byteLength +
+        this.#journalByteLength({
+          rowCount: this.current.rowCount + this.pendingRows.length,
+          statementCount: this.current.statementCount + 1,
+        }) >
+        this.maxShardBytes
+    ) {
       await this.#closeCurrent();
     }
     if (!this.current) await this.#openNext();
+    invariant(
+      this.current.byteLength +
+        byteLength +
+        this.#journalByteLength({
+          rowCount: this.pendingRows.length,
+          statementCount: 1,
+        }) <=
+        this.maxShardBytes,
+      `${this.table}: one statement plus its import journal marker exceeds the shard limit.`,
+    );
     await this.#write(statement);
     this.current.statementCount += 1;
     this.current.rowCount += this.pendingRows.length;
@@ -117,10 +140,12 @@ export class SqlShardWriter {
     const filePath = resolve(this.directory, fileName);
     const stream = createWriteStream(filePath, { flags: "wx" });
     const hash = createHash("sha256");
+    const payloadHash = createHash("sha256");
     this.current = {
       filePath,
       stream,
       hash,
+      payloadHash,
       byteLength: 0,
       rowCount: 0,
       statementCount: 0,
@@ -128,26 +153,60 @@ export class SqlShardWriter {
     await this.#write(GENERATED_HEADER);
   }
 
-  async #write(value) {
+  async #write(value, { payload = true } = {}) {
     const bytes = Buffer.byteLength(value);
     this.current.hash.update(value);
+    if (payload) this.current.payloadHash.update(value);
     this.current.byteLength += bytes;
     await writeWithBackpressure(this.current.stream, value);
   }
 
   async #closeCurrent() {
     if (!this.current) return;
+    const shardPath = relative(this.outputRoot, this.current.filePath).replaceAll("\\", "/");
+    const payloadSha256 = this.current.payloadHash.digest("hex");
+    await this.#write(this.#journalSql({ payloadSha256 }), { payload: false });
     await endWritable(this.current.stream);
     this.artifacts.push({
-      path: relative(this.outputRoot, this.current.filePath).replaceAll("\\", "/"),
+      path: shardPath,
       byteLength: this.current.byteLength,
       sha256: this.current.hash.digest("hex"),
+      payloadSha256,
       rowCount: this.current.rowCount,
       statementCount: this.current.statementCount,
       kind: "d1-sql",
+      phase: "load",
+      database: this.database,
       table: this.table,
     });
     this.current = null;
+  }
+
+  #journalByteLength({ rowCount, statementCount }) {
+    if (!this.current) return 0;
+    return Buffer.byteLength(
+      this.#journalSql({ payloadSha256: "0".repeat(64), rowCount, statementCount }),
+    );
+  }
+
+  #journalSql({
+    payloadSha256,
+    rowCount = this.current.rowCount,
+    statementCount = this.current.statementCount,
+  }) {
+    invariant(this.journal, `${this.table}: import journal metadata is required.`);
+    const shardPath = relative(this.outputRoot, this.current.filePath).replaceAll("\\", "/");
+    return `INSERT INTO "import_shards" ("snapshot_id", "source_database_sha256", "shard_path", "payload_sha256", "table_name", "row_count", "statement_count") VALUES\n  (${[
+      this.journal.snapshotId,
+      this.journal.sourceDatabaseSha256,
+      shardPath,
+      payloadSha256,
+      this.table,
+      rowCount,
+      statementCount,
+    ]
+      .map(sqlLiteral)
+      .join(", ")});\n`;
   }
 }
 
