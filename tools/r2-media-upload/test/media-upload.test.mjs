@@ -76,6 +76,7 @@ test("uploads to the immutable snapshot namespace and records a resumable checkp
   const key = `snapshots/${SNAPSHOT_ID}/artwork/7.webp`;
   assert.equal(report.ok, true);
   assert.equal(report.counts.uploaded, 1);
+  assert.equal(report.target.transport, "s3");
   assert.equal(uploaded.length, 1);
   assert.equal(uploaded[0].key, key);
   assert.equal(uploaded[0].bytes.compare(artwork), 0);
@@ -284,6 +285,45 @@ test("CLI rejects session tokens as arguments", () => {
         "must-not-be-accepted",
       ]),
     /Unknown option '--session-token'/,
+  );
+});
+
+test("CLI selects the Worker bridge explicitly and rejects ambiguous target options", () => {
+  const options = parseCliOptions([
+    "--snapshot-id",
+    SNAPSHOT_ID,
+    "--manifest",
+    "artwork-manifest.ndjson",
+    "--bridge-url",
+    "https://bridge.example.workers.dev",
+  ]);
+  assert.equal(options.bridgeUrlValue, "https://bridge.example.workers.dev");
+
+  assert.throws(
+    () =>
+      parseCliOptions([
+        "--snapshot-id",
+        SNAPSHOT_ID,
+        "--manifest",
+        "artwork-manifest.ndjson",
+        "--bridge-url",
+        "https://bridge.example.workers.dev",
+        "--endpoint",
+        "https://example.r2.cloudflarestorage.com",
+      ]),
+    /cannot be combined/,
+  );
+  assert.throws(
+    () =>
+      parseCliOptions([
+        "--snapshot-id",
+        SNAPSHOT_ID,
+        "--manifest",
+        "artwork-manifest.ndjson",
+        "--bridge-secret",
+        "must-not-be-accepted",
+      ]),
+    /Unknown option '--bridge-secret'/,
   );
 });
 

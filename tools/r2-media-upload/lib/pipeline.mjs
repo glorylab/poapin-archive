@@ -285,6 +285,8 @@ export async function uploadArtworkArchive({
     target: options.dryRun
       ? null
       : {
+          transport: options.transport ?? "s3",
+          ...(options.protocolVersion ? { protocolVersion: options.protocolVersion } : {}),
           bucket: options.bucket,
           endpoint: options.endpoint,
           snapshotId: options.snapshotId,

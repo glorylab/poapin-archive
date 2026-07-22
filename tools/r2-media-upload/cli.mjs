@@ -23,6 +23,7 @@ import { loadArtworkManifest } from "./lib/manifest.mjs";
 import { uploadArtworkArchive } from "./lib/pipeline.mjs";
 import { createR2Target, ImmutableR2Uploader, redactErrorMessage } from "./lib/r2.mjs";
 import { openArchiveSource } from "./lib/source.mjs";
+import { createWorkerBridgeTarget } from "./lib/worker-bridge.mjs";
 
 const HELP = `POAPin Archive — immutable R2 artwork uploader
 
@@ -47,10 +48,16 @@ R2 target (not required with --dry-run):
   --bucket <name>           R2 bucket; defaults to R2_BUCKET.
   --account-id <id>         Cloudflare account ID; defaults to R2_ACCOUNT_ID.
   --endpoint <https-url>    Override R2 S3 endpoint; defaults to R2_ENDPOINT.
+  --bridge-url <https-origin>
+                            Use the temporary authenticated Worker bridge instead
+                            of S3 credentials.
 
 Credentials are read only from R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and the
 optional R2_SESSION_TOKEN used by temporary credentials. They are intentionally
 not accepted as flags or written to logs/reports.
+
+The Worker bridge reads its 32-byte base64url secret only from
+R2_UPLOAD_BRIDGE_SECRET. The root secret is never sent in a request.
 
 Run control:
   --concurrency <1-16>      Concurrent decompression/upload tasks (default: 4).
@@ -80,6 +87,7 @@ export function parseCliOptions(argv) {
       bucket: { type: "string" },
       "account-id": { type: "string" },
       endpoint: { type: "string" },
+      "bridge-url": { type: "string" },
       concurrency: { type: "string", default: "4" },
       attempts: { type: "string", default: "4" },
       "max-failures": { type: "string", default: "25" },
@@ -109,6 +117,9 @@ export function parseCliOptions(argv) {
   const limit =
     values.limit === undefined ? null : boundedInteger(values.limit, "--limit", 1, 1_000_000);
   const verifyKnownSource = !values["allow-unverified-source"];
+  if (values["bridge-url"] && (values.endpoint || values["account-id"])) {
+    throw optionError("--bridge-url cannot be combined with --endpoint or --account-id.");
+  }
 
   return {
     help: false,
@@ -117,6 +128,7 @@ export function parseCliOptions(argv) {
     sourceValue: values.source,
     accountId: values["account-id"],
     endpointValue: values.endpoint,
+    bridgeUrlValue: values["bridge-url"],
     bucketValue: values.bucket,
     concurrency,
     attempts,
@@ -169,28 +181,54 @@ export async function main(argv = process.argv.slice(2)) {
       snapshotId: config.snapshotId,
       cacheControl: config.cacheControl,
     });
-    source = await openArchiveSource(config.sourceValue, { signal: controller.signal });
     let uploader = null;
     let bucket = null;
     let endpoint = null;
+    let transport = null;
+    let protocolVersion = null;
 
     if (!config.dryRun) {
-      const target = createR2Target({
-        accountId: config.accountId,
-        endpoint: config.endpointValue,
-        bucket: config.bucketValue,
-      });
-      bucket = target.bucket;
-      endpoint = target.endpoint;
-      secrets = target.secrets;
-      r2Client = target.client;
-      uploader = new ImmutableR2Uploader({
-        client: target.client,
-        bucket,
-        cacheControl: config.cacheControl,
-        attempts: config.attempts,
-        secrets,
-      });
+      if (config.bridgeUrlValue) {
+        const target = createWorkerBridgeTarget({
+          bridgeUrl: config.bridgeUrlValue,
+          bucket: config.bucketValue,
+          snapshotId: config.snapshotId,
+          cacheControl: config.cacheControl,
+          maximumEntryBytes: config.maximumEntryBytes,
+          attempts: config.attempts,
+        });
+        bucket = target.bucket;
+        endpoint = target.endpoint;
+        protocolVersion = target.protocolVersion;
+        secrets = target.secrets;
+        uploader = target.uploader;
+        transport = "worker-bridge";
+        await uploader.verifyTarget({ signal: controller.signal });
+        console.error("Authenticated upload bridge preflight passed.");
+      } else {
+        const target = createR2Target({
+          accountId: config.accountId,
+          endpoint: config.endpointValue,
+          bucket: config.bucketValue,
+        });
+        bucket = target.bucket;
+        endpoint = target.endpoint;
+        secrets = target.secrets;
+        r2Client = target.client;
+        uploader = new ImmutableR2Uploader({
+          client: target.client,
+          bucket,
+          cacheControl: config.cacheControl,
+          attempts: config.attempts,
+          secrets,
+        });
+        transport = "s3";
+      }
+    }
+
+    source = await openArchiveSource(config.sourceValue, { signal: controller.signal });
+
+    if (!config.dryRun) {
       checkpoint = await new JsonlCheckpoint(config.checkpointPath).open({
         snapshotId: config.snapshotId,
         archiveSha256: config.expectedSourceSha256,
@@ -217,6 +255,8 @@ export async function main(argv = process.argv.slice(2)) {
         ...config,
         bucket,
         endpoint,
+        transport,
+        protocolVersion,
       },
       onProgress({ settled, counts }) {
         console.error(

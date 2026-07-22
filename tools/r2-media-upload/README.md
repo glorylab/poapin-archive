@@ -47,6 +47,46 @@ are redacted from surfaced SDK errors. Use a short-lived operator session or
 secret manager where possible, then clear all credential environment variables
 when the run is complete.
 
+### Temporary Worker bridge
+
+When an operator has an authenticated Wrangler session but cannot create S3
+credentials, the uploader can use the narrowly scoped Worker in
+[`bridge/worker.mjs`](bridge/worker.mjs). Deploy it as a separate, temporary
+Worker with only these bindings and variables:
+
+- `ARCHIVE_BUCKET`: the destination R2 bucket binding;
+- `BRIDGE_HMAC_SECRET`: a Wrangler secret containing 32 random bytes encoded as
+  unpadded base64url;
+- `BUCKET_NAME`, `SNAPSHOT_ID`, `CACHE_CONTROL`, and `MAX_OBJECT_BYTES`: fixed
+  deployment metadata that must match the import.
+
+Do not add the bridge to the public site's Wrangler configuration or routes.
+Give it a dedicated `workers.dev` name, disable preview URLs and observability,
+and deploy its code and secret together. The checked-in bridge exposes only a
+signed status preflight and a signed upload endpoint; it cannot read, list,
+delete, or overwrite objects. Remove the entire temporary Worker after the
+upload report and R2 verification pass.
+
+Keep the same secret only in the bridge and uploader processes:
+
+```bash
+export R2_BUCKET="poapin-archive"
+export R2_UPLOAD_BRIDGE_SECRET="<32-byte-base64url-secret>"
+
+npm run media:upload -- \
+  --snapshot-id 2026-07-02-v1 \
+  --manifest import-reports/2026-07-02-v1/r2/artwork-manifest.ndjson \
+  --source /path/to/archive.zip \
+  --bridge-url https://temporary-ingest.example.workers.dev
+```
+
+The root secret is never transmitted. Each request carries a five-minute HMAC
+signature bound to the method, endpoint path, bucket, snapshot, object key,
+byte length, and SHA-256. A captured upload request can therefore authorize
+only a replay of the same immutable object. The CLI completes a signed
+preflight before opening the ZIP and records only the sanitized Worker origin
+and transport name in its checkpoint and report.
+
 ## Dry run
 
 A dry run needs no R2 credentials. It parses ZIP local records, inflates only
@@ -95,11 +135,13 @@ Completed entries are drained from the ZIP without decompression or an R2 call.
 For a remote source, resuming still transfers earlier archive bytes because the
 ZIP is processed as one forward stream.
 
-Every `PutObject` uses `If-None-Match: *`, `Content-MD5`, `image/webp`, immutable
-cache metadata, and a SHA-256 object metadata field. If an object already
-exists, a `HeadObject` is accepted only when its byte length, SHA-256, media
-type, and cache policy all match. A mismatch is reported and is never
-overwritten.
+The S3 transport uses `If-None-Match: *`, `Content-MD5`, `image/webp`, immutable
+cache metadata, and a SHA-256 object metadata field. The Worker bridge streams
+the request body directly to the R2 binding and supplies the signed SHA-256 as
+R2's integrity checksum. Both transports create objects conditionally. If an
+object already exists, it is accepted only when its byte length, SHA-256,
+media type, source metadata, and cache policy all match. A mismatch is reported
+and is never overwritten.
 
 The final JSON report contains source and manifest digests, validation results,
 object and byte counts, bounded error messages, and every failed key. `ok`
@@ -126,4 +168,6 @@ npm run test:media-upload
 ```
 
 The suite builds tiny ZIP fixtures in memory, including a deflated WebP with
-ZIP64 local sizes, and uses mock S3 responses. It never contacts R2.
+ZIP64 local sizes, and uses mock S3 and Worker/R2 responses. Bridge tests cover
+HMAC preflight, tamper rejection, immutable reuse, conflicts, and lost-response
+retries. Tests never contact R2.
