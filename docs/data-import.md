@@ -42,6 +42,16 @@ objects without uploading or reusing any object and reported zero failures. The
 snapshot-scoped remote D1 then passed its staged verification and was activated
 with `ready=1` for `collections-2026-07-22-v1`.
 
+The final private source-level package is 5,579,316,274 bytes with SHA-256
+`dbb466f3cf74a2b006a0b467445bd8472d4ae190fc49fc0d262b8a375e037bfc`.
+It is stored as 27 independently checksummed parts under the immutable private
+R2 prefix
+`collections/collections-2026-07-22-v1-final-sha256-dbb466f3cf74a2b006a0b467445bd8472d4ae190fc49fc0d262b8a375e037bfc/`.
+Every remote part was downloaded again, checked individually, and streamed in
+manifest order to reproduce the original byte length and SHA-256. The verified
+`upload-report.json` was uploaded last as the completion marker; the earlier
+draft prefix remains untouched.
+
 Do not publish a dataset merely because it can be parsed. Provenance, integrity,
 privacy, and redistribution considerations are release gates.
 
