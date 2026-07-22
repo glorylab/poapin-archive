@@ -1,5 +1,14 @@
 import { Hono } from "hono";
 import { withSnapshotCache } from "./cache";
+import {
+  fetchCollectionArtistDrops,
+  fetchCollectionDropStats,
+  fetchCollectionExportManifest,
+  fetchCollectionItems,
+  fetchCollectionProfile,
+  fetchCollectionSuggestions,
+  fetchCollections,
+} from "./collections-repository";
 import { createExportResponse, MAX_SYNC_EXPORT_RECORDS } from "./exports";
 import {
   fetchDrop,
@@ -9,17 +18,39 @@ import {
   fetchOwnerTotal,
   fetchSnapshotAt,
 } from "./repository";
-import type { AppEnv } from "./types";
+import type { AppEnv, Bindings } from "./types";
 import {
   ApiError,
   assertNoQuery,
   normalizeAddress,
+  parseCollectionId,
+  parseCollectionExportSegmentQuery,
+  parseCollectionItemsQuery,
+  parseCollectionsQuery,
   parseDropId,
   parseDropsQuery,
   parseOwnerQuery,
 } from "./validation";
 
 export const app = new Hono<AppEnv>();
+
+// Collections gained a stricter public projection after the first archive API
+// release. Keep its cache namespace separate so old edge objects cannot bypass
+// privacy redaction while unrelated archive endpoints retain their stable key.
+const COLLECTIONS_CACHE_SCHEMA = "collections-v3";
+
+export function collectionsApiVersion(
+  bindings: Pick<Bindings, "API_CACHE_VERSION" | "COLLECTIONS_RELEASE_ID">,
+): string {
+  if (!bindings.COLLECTIONS_RELEASE_ID) {
+    throw new ApiError(
+      503,
+      "The Collections release identifier is not configured.",
+      "collections_release_unavailable",
+    );
+  }
+  return `${bindings.API_CACHE_VERSION}.${COLLECTIONS_CACHE_SCHEMA}.${bindings.COLLECTIONS_RELEASE_ID}`;
+}
 
 app.use("/api/*", async (context, next) => {
   await next();
@@ -94,6 +125,349 @@ app.get("/api/drops/:id", async (context) => {
       const drop = await fetchDrop(db, dropId, context.env.MEDIA_BASE_URL, context.env.SNAPSHOT_ID);
       if (!drop) throw new ApiError(404, "Drop was not found in this snapshot.", "drop_not_found");
       return context.json(drop);
+    },
+  );
+});
+
+app.get("/api/collections", async (context) => {
+  const limited = await enforceRateLimit(context.env.BROWSE_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const query = parseCollectionsQuery(
+    new URL(context.req.url),
+    context.env.COLLECTIONS_SNAPSHOT_ID,
+  );
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: "/api/collections",
+      canonicalSearch: query.canonicalSearch,
+      snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+      apiVersion: collectionsApiVersion(context.env),
+      edgeTtlSeconds: 604_800,
+      browserTtlSeconds: 60,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.COLLECTIONS_DB.withSession("first-primary");
+      return context.json(
+        await fetchCollections(
+          db,
+          query,
+          context.env.COLLECTIONS_SNAPSHOT_ID,
+          context.env.MEDIA_BASE_URL,
+        ),
+      );
+    },
+  );
+});
+
+app.get("/api/collections/:id/items", async (context) => {
+  const limited = await enforceRateLimit(context.env.BROWSE_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const query = parseCollectionItemsQuery(
+    new URL(context.req.url),
+    context.req.param("id"),
+    context.env.COLLECTIONS_SNAPSHOT_ID,
+  );
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: `/api/collections/${query.collectionId}/items`,
+      canonicalSearch: query.canonicalSearch,
+      snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+      apiVersion: collectionsApiVersion(context.env),
+      edgeTtlSeconds: 604_800,
+      browserTtlSeconds: 60,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.COLLECTIONS_DB.withSession("first-primary");
+      const page = await fetchCollectionItems(
+        db,
+        query,
+        context.env.COLLECTIONS_SNAPSHOT_ID,
+        context.env.MEDIA_BASE_URL,
+        context.env.SNAPSHOT_ID,
+      );
+      if (!page) throw collectionNotFound();
+      return context.json(page);
+    },
+  );
+});
+
+app.get("/api/collections/:id/export", async (context) => {
+  const limited = await enforceRateLimit(context.env.BROWSE_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const url = new URL(context.req.url);
+  assertNoQuery(url);
+  const collectionId = parseCollectionId(context.req.param("id"));
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: `/api/collections/${collectionId}/export`,
+      snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+      apiVersion: collectionsApiVersion(context.env),
+      edgeTtlSeconds: 2_592_000,
+      browserTtlSeconds: 300,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.COLLECTIONS_DB.withSession("first-primary");
+      const manifest = await fetchCollectionExportManifest(
+        db,
+        collectionId,
+        context.env.COLLECTIONS_SNAPSHOT_ID,
+      );
+      if (!manifest) throw collectionNotFound();
+      return context.json(manifest);
+    },
+  );
+});
+
+app.get("/api/collections/:id/export/metadata", async (context) => {
+  const limited = await enforceRateLimit(context.env.BROWSE_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const url = new URL(context.req.url);
+  assertNoQuery(url);
+  const collectionId = parseCollectionId(context.req.param("id"));
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: `/api/collections/${collectionId}/export/metadata`,
+      snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+      apiVersion: collectionsApiVersion(context.env),
+      edgeTtlSeconds: 2_592_000,
+      browserTtlSeconds: 300,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.COLLECTIONS_DB.withSession("first-primary");
+      const profile = await fetchCollectionProfile(
+        db,
+        collectionId,
+        context.env.COLLECTIONS_SNAPSHOT_ID,
+        context.env.MEDIA_BASE_URL,
+      );
+      if (!profile) throw collectionNotFound();
+      return context.json({ schemaVersion: "poapin-collection-export-v1", ...profile });
+    },
+  );
+});
+
+app.get("/api/collections/:id/export/items", async (context) => {
+  const limited = await enforceRateLimit(context.env.BROWSE_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const query = parseCollectionItemsQuery(
+    new URL(context.req.url),
+    context.req.param("id"),
+    context.env.COLLECTIONS_SNAPSHOT_ID,
+  );
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: `/api/collections/${query.collectionId}/export/items`,
+      canonicalSearch: query.canonicalSearch,
+      snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+      apiVersion: collectionsApiVersion(context.env),
+      edgeTtlSeconds: 604_800,
+      browserTtlSeconds: 60,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.COLLECTIONS_DB.withSession("first-primary");
+      const page = await fetchCollectionItems(
+        db,
+        query,
+        context.env.COLLECTIONS_SNAPSHOT_ID,
+        context.env.MEDIA_BASE_URL,
+        context.env.SNAPSHOT_ID,
+      );
+      if (!page) throw collectionNotFound();
+      return context.json({
+        schemaVersion: "poapin-collection-export-v1",
+        snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+        ...page,
+        nextPath: collectionExportNextPath(
+          query.collectionId,
+          "items",
+          query.limit,
+          page.nextCursor,
+        ),
+      });
+    },
+  );
+});
+
+app.get("/api/collections/:id/export/artist-drops", async (context) => {
+  const limited = await enforceRateLimit(context.env.BROWSE_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const query = parseCollectionExportSegmentQuery(
+    new URL(context.req.url),
+    context.req.param("id"),
+    "artist-drops",
+    context.env.COLLECTIONS_SNAPSHOT_ID,
+  );
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: `/api/collections/${query.collectionId}/export/artist-drops`,
+      canonicalSearch: query.canonicalSearch,
+      snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+      apiVersion: collectionsApiVersion(context.env),
+      edgeTtlSeconds: 604_800,
+      browserTtlSeconds: 60,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.COLLECTIONS_DB.withSession("first-primary");
+      const page = await fetchCollectionArtistDrops(
+        db,
+        query,
+        context.env.COLLECTIONS_SNAPSHOT_ID,
+        context.env.MEDIA_BASE_URL,
+        context.env.SNAPSHOT_ID,
+      );
+      if (!page) throw collectionNotFound();
+      return context.json({
+        schemaVersion: "poapin-collection-export-v1",
+        snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+        ...page,
+        nextPath: collectionExportNextPath(
+          query.collectionId,
+          "artist-drops",
+          query.limit,
+          page.nextCursor,
+        ),
+      });
+    },
+  );
+});
+
+app.get("/api/collections/:id/export/suggestions", async (context) => {
+  const limited = await enforceRateLimit(context.env.BROWSE_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const query = parseCollectionExportSegmentQuery(
+    new URL(context.req.url),
+    context.req.param("id"),
+    "suggestions",
+    context.env.COLLECTIONS_SNAPSHOT_ID,
+  );
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: `/api/collections/${query.collectionId}/export/suggestions`,
+      canonicalSearch: query.canonicalSearch,
+      snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+      apiVersion: collectionsApiVersion(context.env),
+      edgeTtlSeconds: 604_800,
+      browserTtlSeconds: 60,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.COLLECTIONS_DB.withSession("first-primary");
+      const page = await fetchCollectionSuggestions(
+        db,
+        query,
+        context.env.COLLECTIONS_SNAPSHOT_ID,
+        context.env.MEDIA_BASE_URL,
+        context.env.SNAPSHOT_ID,
+      );
+      if (!page) throw collectionNotFound();
+      return context.json({
+        schemaVersion: "poapin-collection-export-v1",
+        snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+        ...page,
+        nextPath: collectionExportNextPath(
+          query.collectionId,
+          "suggestions",
+          query.limit,
+          page.nextCursor,
+        ),
+      });
+    },
+  );
+});
+
+app.get("/api/collections/:id/export/drop-stats", async (context) => {
+  const limited = await enforceRateLimit(context.env.BROWSE_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const query = parseCollectionExportSegmentQuery(
+    new URL(context.req.url),
+    context.req.param("id"),
+    "drop-stats",
+    context.env.COLLECTIONS_SNAPSHOT_ID,
+  );
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: `/api/collections/${query.collectionId}/export/drop-stats`,
+      canonicalSearch: query.canonicalSearch,
+      snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+      apiVersion: collectionsApiVersion(context.env),
+      edgeTtlSeconds: 604_800,
+      browserTtlSeconds: 60,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.COLLECTIONS_DB.withSession("first-primary");
+      const page = await fetchCollectionDropStats(db, query, context.env.COLLECTIONS_SNAPSHOT_ID);
+      if (!page) throw collectionNotFound();
+      return context.json({
+        schemaVersion: "poapin-collection-export-v1",
+        snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+        ...page,
+        nextPath: collectionExportNextPath(
+          query.collectionId,
+          "drop-stats",
+          query.limit,
+          page.nextCursor,
+        ),
+      });
+    },
+  );
+});
+
+app.get("/api/collections/:id", async (context) => {
+  const limited = await enforceRateLimit(context.env.BROWSE_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const url = new URL(context.req.url);
+  assertNoQuery(url);
+  const collectionId = parseCollectionId(context.req.param("id"));
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: `/api/collections/${collectionId}`,
+      snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+      apiVersion: collectionsApiVersion(context.env),
+      edgeTtlSeconds: 2_592_000,
+      browserTtlSeconds: 300,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.COLLECTIONS_DB.withSession("first-primary");
+      const profile = await fetchCollectionProfile(
+        db,
+        collectionId,
+        context.env.COLLECTIONS_SNAPSHOT_ID,
+        context.env.MEDIA_BASE_URL,
+      );
+      if (!profile) throw collectionNotFound();
+      const itemsUrl = new URL(context.req.url);
+      itemsUrl.searchParams.set("limit", "24");
+      const itemsQuery = parseCollectionItemsQuery(
+        itemsUrl,
+        String(collectionId),
+        context.env.COLLECTIONS_SNAPSHOT_ID,
+      );
+      const items = await fetchCollectionItems(
+        db,
+        itemsQuery,
+        context.env.COLLECTIONS_SNAPSHOT_ID,
+        context.env.MEDIA_BASE_URL,
+        context.env.SNAPSHOT_ID,
+      );
+      if (!items) throw collectionNotFound();
+      return context.json({ ...profile, items });
     },
   );
 });
@@ -196,6 +570,21 @@ async function enforceRateLimit(limiter: RateLimit, request: Request): Promise<R
       },
     },
   );
+}
+
+function collectionNotFound(): ApiError {
+  return new ApiError(404, "Collection was not found in this snapshot.", "collection_not_found");
+}
+
+function collectionExportNextPath(
+  collectionId: number,
+  segment: "items" | "artist-drops" | "suggestions" | "drop-stats",
+  limit: number,
+  cursor: string | null,
+): string | null {
+  if (!cursor) return null;
+  const search = new URLSearchParams({ cursor, limit: String(limit) });
+  return `/api/collections/${collectionId}/export/${segment}?${search}`;
 }
 
 export default app;

@@ -9,7 +9,8 @@ service that remains understandable to future maintainers.
 1. Cloudflare serves the Vite-built React application as static Worker assets.
 2. The browser requests a public `/api/*` resource from the Hono Worker.
 3. An eligible, snapshot-versioned response may be served from edge cache.
-4. On a miss, the Worker validates and bounds input, then queries one D1 binding.
+4. On a miss, the Worker validates and bounds input, then queries the one D1
+   binding responsible for that dataset.
 5. Artwork is addressed by immutable R2-backed URLs and is not transformed in
    the request.
 6. The Worker returns explicit cache, content-type, and security headers.
@@ -48,12 +49,72 @@ rewriting catalog routes.
 API responses may join the two datasets in application code only with bounded
 ID lists. Never implement an unbounded request fan-out.
 
+### D1 Collections
+
+`COLLECTIONS_DB` preserves the independently captured POAP Compass Collections
+view: collection profiles, URLs and UI settings, memberships, ordered sections,
+artist and organization records, suggestions, referenced drop cards, and
+Collection branding metadata. It deliberately has its own
+`COLLECTIONS_SNAPSHOT_ID`; a new Collections capture must not force the much
+larger fixed catalog and holdings snapshot to be rewritten.
+
+Collection slugs are not unique. Public identity, cache keys, pagination, and
+foreign relations use numeric `collection_id`. Lists and relation exports use
+indexed keyset cursors with hard page limits. A collection export is a manifest
+of bounded metadata, items, artist-drop, approved-suggestion, and drop-statistics
+segments rather than a single unbounded Worker response. Drop-statistics pages
+deduplicate all three public relation sources, expose only aggregate email-claim
+counts, and fetch per-chain rows only after private and hidden drops are redacted.
+
+#### Public drop-statistics contract
+
+Visible drop cards returned by `items`, `artist-drops`, and approved
+`suggestions` include `tokenCount`, `transferCount`,
+`emailClaims { minted, reserved, total } | null`, `featuredOn`, and
+`momentsUploaded`. Email claims are aggregate counts only; raw claims and claimant
+identities are never part of the public projection. Pending, rejected, or any
+other non-approved suggestion status is excluded from both the suggestion export
+and statistics coverage.
+
+`GET /api/collections/:id/export/drop-stats` returns the deduplicated union of
+the collection's items, artist drops, and approved suggestions. A visible entry
+contains the same aggregates plus
+`byChain { chain, createdOn, poapCount, transferCount }[]`; `createdOn` is the
+source Unix-seconds integer, or `null` when the source omitted it. Privacy is
+resolved before the per-chain lookup:
+
+- hidden drops return only `{ dropId, isHidden: true }`;
+- private or fail-closed drops return only `{ dropId, isPrivate: true }`; and
+- a referenced card missing from the projection returns only `{ dropId }`.
+
+No title, aggregate, media field, or per-chain row accompanies those ID-only
+forms. The export manifest lists `drop-stats` only when the collection has at
+least one eligible item, artist-drop, or approved-suggestion relation.
+
+The endpoint accepts `limit=1..48` and defaults to 24, so a page contains at
+most 48 unique drop IDs. Per-chain output is limited to 16 rows per visible drop
+and 768 rows across a page; an imported shape beyond either boundary fails with
+`503 collections_shape_unsupported` instead of truncating data. The secondary
+query receives only the page's visible IDs and uses at most 49 bindings: 48 IDs
+plus its row limit.
+
+Pagination is keyset-based. `nextCursor` is bound to the Collections snapshot,
+numeric collection ID, `drop-stats` segment, normalized filter, and page limit;
+reusing it across a different snapshot, collection, segment, or limit returns 400. Clients should follow the returned `nextPath` unchanged until it becomes
+`null`.
+
+Every Collections read checks both the configured snapshot ID and the D1
+readiness marker. A fully loaded staging database remains unavailable until its
+eligible media has been published and a separately reviewed finalizer marks the
+same snapshot ready.
+
 ### R2 media
 
-`ARCHIVE_BUCKET` stores source artwork under immutable keys. The first version
-serves originals; thumbnail or format variants, if introduced, should be
-generated asynchronously or during import and stored as separate immutable
-objects. A request must never wait for a transform.
+`ARCHIVE_BUCKET` stores source artwork and eligible Collection logos and banners
+under immutable snapshot-scoped keys. The first version serves originals;
+thumbnail or format variants, if introduced, should be generated asynchronously
+or during import and stored as separate immutable objects. A request must never
+wait for a transform.
 
 The database stores object identity and integrity metadata, not time-limited
 signed URLs. Missing media should degrade to an accessible placeholder.
@@ -64,6 +125,13 @@ Cache is safe only for deterministic public GET/HEAD responses. Cache keys must
 include the active snapshot ID plus every normalized input that changes the
 response. Do not cache errors by default, responses with `Set-Cookie`, operator
 endpoints, or future personalized/authenticated routes.
+
+Collections additionally requires `COLLECTIONS_RELEASE_ID`, which identifies a
+specific activated D1 binding and public projection release. The Worker composes
+it into both the Collections API version header and every Collections cache key.
+It must change whenever that binding or its published contents change, even when
+`COLLECTIONS_SNAPSHOT_ID` remains the same. Cache hits therefore need no D1
+readiness query merely to detect a replacement release.
 
 The Cache API is data-center-local and does not replace persistent storage.
 Where Workers caching can serve a response before Worker execution, prefer it
@@ -87,6 +155,12 @@ A snapshot moves through these states:
 
 Activation happens after data and media publication, never halfway through an
 import. See [Data import](data-import.md).
+
+The fixed archive ZIP and Compass Collections are separate sources. Compass
+does not expose a transaction spanning GraphQL requests, so a Collections
+release additionally requires two independent full captures with identical
+canonical row counts and SHA-256 digests. This is an auditable API-level
+capture, not a claim to possess the source PostgreSQL database.
 
 ## Query and CPU rules
 
