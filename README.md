@@ -17,11 +17,16 @@ artwork served from [`media.poap.in`](https://media.poap.in).
 > [!IMPORTANT]
 > The public deployment serves a fixed snapshot captured on July 2, 2026, not a
 > canonical or live view of POAP ownership. Its catalog, holdings, and 73,795
-> original artwork objects have been integrity-checked and published.
+> original artwork objects have been integrity-checked and published. Curated
+> POAP Collections use a separately verified `collections-2026-07-22-v1`
+> snapshot and release lifecycle; every API response identifies the Collections
+> snapshot it came from.
 
 ## What it is
 
 - A fast, read-only browser for drops in a published snapshot.
+- Bounded browse, detail, and segmented export APIs for preserved POAP
+  Collections.
 - An address view for finding and exporting the POAPs recorded for an address.
 - A transparent archive: every published dataset should identify its source,
   capture time, checksum, and known limitations.
@@ -32,19 +37,20 @@ No wallet connection is required.
 
 ## Architecture
 
-| Layer    | Technology                       | Responsibility                                                  |
-| -------- | -------------------------------- | --------------------------------------------------------------- |
-| Web      | React + Vite                     | Accessible browsing, filtering, and export controls             |
-| API      | Hono on Cloudflare Workers       | Validation, bounded reads, and cache-safe responses             |
-| Catalog  | Cloudflare D1 (`CATALOG_DB`)     | Drops, snapshot metadata, search fields, and artwork references |
-| Holdings | Cloudflare D1 (`HOLDINGS_DB`)    | Address-to-token lookup, isolated from catalog traffic          |
-| Media    | Cloudflare R2 (`ARCHIVE_BUCKET`) | Immutable original artwork; derived thumbnails may follow later |
-| Cache    | Workers Cache + HTTP caching     | Snapshot-versioned public GET responses and immutable media     |
+| Layer       | Technology                       | Responsibility                                                   |
+| ----------- | -------------------------------- | ---------------------------------------------------------------- |
+| Web         | React + Vite                     | Accessible browsing, filtering, and export controls              |
+| API         | Hono on Cloudflare Workers       | Validation, bounded reads, and cache-safe responses              |
+| Catalog     | Cloudflare D1 (`CATALOG_DB`)     | Drops, snapshot metadata, search fields, and artwork references  |
+| Holdings    | Cloudflare D1 (`HOLDINGS_DB`)    | Address-to-token lookup, isolated from catalog traffic           |
+| Collections | Cloudflare D1 (`COLLECTIONS_DB`) | Curated collections, memberships, sections, and export relations |
+| Media       | Cloudflare R2 (`ARCHIVE_BUCKET`) | Immutable original artwork; derived thumbnails may follow later  |
+| Cache       | Workers Cache + HTTP caching     | Snapshot-versioned public GET responses and immutable media      |
 
-Splitting catalog and holdings keeps their access patterns and growth paths
-independent. Cache is an expendable acceleration layer; D1 and R2 remain the
-sources of served data. See [Architecture](docs/architecture.md) for the request
-and data flow.
+Splitting catalog, holdings, and Collections keeps their access patterns and
+snapshot lifecycles independent. Cache is an expendable acceleration layer; D1
+and R2 remain the sources of served data. See
+[Architecture](docs/architecture.md) for the request and data flow.
 
 ## Cost is a design constraint
 
@@ -112,9 +118,9 @@ npm run check
 `npm run check` also performs a Wrangler dry-run. Tests use the Cloudflare
 Workers runtime rather than a Node-only approximation.
 
-The checked-in local fixture is intentionally tiny and synthetic. It is kept
-outside the migration chain, so applying production migrations can never insert
-sample wallets or events.
+The checked-in local fixtures are intentionally tiny and synthetic. They are
+kept outside the migration chain, so applying production migrations can never
+insert sample wallets, events, or Collections.
 
 ## Data import
 
@@ -127,6 +133,20 @@ machine-readable validation report before publication.
 See [Data import](docs/data-import.md) for the reproducible import contract.
 The resulting reviewed artwork manifest can be uploaded without extracting the
 source ZIP by following the [R2 media uploader guide](tools/r2-media-upload/README.md).
+
+POAP Compass Collections have their own resumable GraphQL capture, two-pass
+stability comparison, media quarantine, verification, D1 projection, and
+private backup workflow. See the
+[Collections backup guide](tools/collections-backup/README.md).
+
+The final local Collections snapshot preserves 2,016 collections, 35,954 items,
+complete cards and anonymous aggregates for 26,004 referenced drops, and a
+26,550-object public media proof spanning reused Archive artwork, newly preserved
+drop originals, and Collection branding. This is an application-level backup of
+data anonymously reachable through Compass, not its physical private database;
+all 26,550 public media objects passed a second remote integrity verification,
+and the snapshot-scoped D1 database was independently loaded, verified, and
+activated before its Worker binding changed.
 
 ## Deployment
 

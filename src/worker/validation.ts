@@ -1,13 +1,32 @@
-import type { DropCursor, DropSort, DropsQuery, EventType, OwnerCursor, OwnerQuery } from "./types";
+import type {
+  CollectionCursor,
+  CollectionExportSegmentCursor,
+  CollectionExportSegmentKind,
+  CollectionExportSegmentQuery,
+  CollectionItemCursor,
+  CollectionItemsQuery,
+  CollectionsQuery,
+  CollectionType,
+  DropCursor,
+  DropSort,
+  DropsQuery,
+  EventType,
+  OwnerCursor,
+  OwnerQuery,
+} from "./types";
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
 const SOURCE_UID = /^[A-Za-z0-9:_-]{1,128}$/;
+const ARTIST_ID = /^[A-Za-z0-9-]{1,128}$/;
 const SEARCH_TERM = /[\p{L}\p{N}]+/gu;
 const DROP_PARAMS = new Set(["q", "year", "type", "sort", "cursor", "limit"]);
 const OWNER_PARAMS = new Set(["cursor", "limit"]);
+const COLLECTION_PARAMS = new Set(["q", "year", "type", "cursor", "limit"]);
+const COLLECTION_ITEM_PARAMS = new Set(["cursor", "limit"]);
 const SORTS = new Set<DropSort>(["recent", "oldest", "popular"]);
 const EVENT_TYPES = new Set<EventType>(["all", "virtual", "in-person"]);
+const COLLECTION_TYPES = new Set<CollectionType>(["all", "artist", "organization", "user"]);
 
 export type ApiStatus = 400 | 404 | 413 | 503;
 
@@ -39,6 +58,17 @@ export function parseDropId(raw: string): number {
   const value = Number(raw);
   if (!Number.isSafeInteger(value)) {
     throw new ApiError(400, "Drop ID is outside the supported range.");
+  }
+  return value;
+}
+
+export function parseCollectionId(raw: string): number {
+  if (!/^[1-9]\d{0,9}$/.test(raw)) {
+    throw new ApiError(400, "Collection ID must be a positive integer.");
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value)) {
+    throw new ApiError(400, "Collection ID is outside the supported range.");
   }
   return value;
 }
@@ -106,11 +136,197 @@ export function parseOwnerQuery(url: URL, rawAddress: string, snapshotId: string
   return { address, limit, cursor, filterKey, canonicalSearch: canonical.toString() };
 }
 
-export function encodeCursor(value: DropCursor | OwnerCursor): string {
+export function parseCollectionsQuery(url: URL, snapshotId: string): CollectionsQuery {
+  assertKnownParams(url.searchParams, COLLECTION_PARAMS);
+
+  const rawQuery = optionalParam(url.searchParams, "q");
+  const search = rawQuery === null ? null : normalizeSearch(rawQuery);
+  const year = parseOptionalInteger(url.searchParams, "year", 1900, 2200);
+  const type = parseEnum(url.searchParams, "type", COLLECTION_TYPES, "all");
+  const limit = parseLimit(url.searchParams, 24);
+  const filterKey = JSON.stringify({ q: search?.text ?? "", year, type, limit });
+
+  const rawCursor = optionalParam(url.searchParams, "cursor");
+  const cursor =
+    rawCursor === null
+      ? null
+      : validateCollectionCursor(decodeCursor<CollectionCursor>(rawCursor), snapshotId, filterKey);
+
+  const canonical = new URLSearchParams();
+  if (search) canonical.set("q", search.text);
+  if (year !== null) canonical.set("year", String(year));
+  if (type !== "all") canonical.set("type", type);
+  if (cursor) canonical.set("cursor", encodeCursor(cursor));
+  canonical.set("limit", String(limit));
+
+  return {
+    q: search?.text ?? null,
+    ftsQuery: search?.ftsQuery ?? null,
+    year,
+    type,
+    limit,
+    cursor,
+    filterKey,
+    canonicalSearch: canonical.toString(),
+  };
+}
+
+export function parseCollectionItemsQuery(
+  url: URL,
+  rawCollectionId: string,
+  snapshotId: string,
+): CollectionItemsQuery {
+  assertKnownParams(url.searchParams, COLLECTION_ITEM_PARAMS);
+  const collectionId = parseCollectionId(rawCollectionId);
+  const limit = parseLimit(url.searchParams, 24);
+  const filterKey = JSON.stringify({ collectionId, limit });
+  const rawCursor = optionalParam(url.searchParams, "cursor");
+  const cursor =
+    rawCursor === null
+      ? null
+      : validateCollectionItemCursor(
+          decodeCursor<CollectionItemCursor>(rawCursor),
+          snapshotId,
+          filterKey,
+        );
+
+  const canonical = new URLSearchParams();
+  if (cursor) canonical.set("cursor", encodeCursor(cursor));
+  canonical.set("limit", String(limit));
+
+  return { collectionId, limit, cursor, filterKey, canonicalSearch: canonical.toString() };
+}
+
+export function parseCollectionExportSegmentQuery(
+  url: URL,
+  rawCollectionId: string,
+  segment: CollectionExportSegmentKind,
+  snapshotId: string,
+): CollectionExportSegmentQuery {
+  assertKnownParams(url.searchParams, COLLECTION_ITEM_PARAMS);
+  const collectionId = parseCollectionId(rawCollectionId);
+  const limit = parseLimit(url.searchParams, 24);
+  const filterKey = JSON.stringify({ collectionId, segment, limit });
+  const rawCursor = optionalParam(url.searchParams, "cursor");
+  const cursor =
+    rawCursor === null
+      ? null
+      : validateCollectionExportSegmentCursor(
+          decodeCursor<CollectionExportSegmentCursor>(rawCursor),
+          snapshotId,
+          filterKey,
+          segment,
+        );
+
+  const canonical = new URLSearchParams();
+  if (cursor) canonical.set("cursor", encodeCursor(cursor));
+  canonical.set("limit", String(limit));
+  return { collectionId, segment, limit, cursor, filterKey, canonicalSearch: canonical.toString() };
+}
+
+export function encodeCursor(
+  value:
+    | DropCursor
+    | OwnerCursor
+    | CollectionCursor
+    | CollectionItemCursor
+    | CollectionExportSegmentCursor,
+): string {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function validateCollectionExportSegmentCursor(
+  cursor: CollectionExportSegmentCursor,
+  snapshotId: string,
+  filterKey: string,
+  segment: CollectionExportSegmentKind,
+): CollectionExportSegmentCursor {
+  const common =
+    isObject(cursor) &&
+    cursor.v === 1 &&
+    cursor.c === "collection-export-segment" &&
+    cursor.s === snapshotId &&
+    cursor.f === filterKey &&
+    cursor.g === segment &&
+    Number.isInteger(cursor.p) &&
+    cursor.p >= 2 &&
+    cursor.p <= 10_000;
+  let key = false;
+  if (segment === "artist-drops") {
+    key =
+      typeof cursor.a === "string" &&
+      ARTIST_ID.test(cursor.a) &&
+      Number.isSafeInteger(cursor.d) &&
+      Number(cursor.d) > 0 &&
+      cursor.i === undefined;
+  } else if (segment === "suggestions") {
+    key =
+      Number.isSafeInteger(cursor.i) &&
+      Number(cursor.i) > 0 &&
+      cursor.a === undefined &&
+      cursor.d === undefined;
+  } else {
+    key =
+      Number.isSafeInteger(cursor.d) &&
+      Number(cursor.d) > 0 &&
+      cursor.a === undefined &&
+      cursor.i === undefined;
+  }
+  if (!common || !key) {
+    throw new ApiError(400, "Cursor does not belong to this export segment or snapshot.");
+  }
+  return cursor;
+}
+
+function validateCollectionCursor(
+  cursor: CollectionCursor,
+  snapshotId: string,
+  filterKey: string,
+): CollectionCursor {
+  if (
+    !isObject(cursor) ||
+    cursor.v !== 1 ||
+    cursor.c !== "collections" ||
+    cursor.s !== snapshotId ||
+    cursor.f !== filterKey ||
+    !Number.isInteger(cursor.p) ||
+    cursor.p < 2 ||
+    cursor.p > 10_000 ||
+    typeof cursor.k !== "string" ||
+    cursor.k.length === 0 ||
+    cursor.k.length > 64 ||
+    /[\u0000-\u001f]/.test(cursor.k) ||
+    !Number.isSafeInteger(cursor.i) ||
+    cursor.i <= 0
+  ) {
+    throw new ApiError(400, "Cursor does not belong to this collections query or snapshot.");
+  }
+  return cursor;
+}
+
+function validateCollectionItemCursor(
+  cursor: CollectionItemCursor,
+  snapshotId: string,
+  filterKey: string,
+): CollectionItemCursor {
+  if (
+    !isObject(cursor) ||
+    cursor.v !== 1 ||
+    cursor.c !== "collection-items" ||
+    cursor.s !== snapshotId ||
+    cursor.f !== filterKey ||
+    !Number.isInteger(cursor.p) ||
+    cursor.p < 2 ||
+    cursor.p > 10_000 ||
+    !Number.isSafeInteger(cursor.i) ||
+    cursor.i <= 0
+  ) {
+    throw new ApiError(400, "Cursor does not belong to this collection or snapshot.");
+  }
+  return cursor;
 }
 
 function decodeCursor<T>(raw: string): T {

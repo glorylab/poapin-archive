@@ -1,5 +1,10 @@
 import type {
   ArchiveMeta,
+  CollectionDetailResponse,
+  CollectionExportManifest,
+  CollectionItemsPage,
+  CollectionSummary,
+  CollectionType,
   Drop,
   DropSort,
   EventType,
@@ -72,4 +77,43 @@ export function getOwner(address: string, cursor?: string | null, signal?: Abort
     `/api/owners/${encodeURIComponent(address)}?${params}`,
     signal,
   );
+}
+
+export interface CollectionsQuery {
+  q?: string;
+  year?: number;
+  type?: CollectionType;
+  cursor?: string | null;
+  limit?: number;
+}
+
+export function getCollections(query: CollectionsQuery, signal?: AbortSignal) {
+  const params = new URLSearchParams();
+  if (query.q) params.set("q", query.q.trim());
+  if (query.year) params.set("year", String(query.year));
+  if (query.type && query.type !== "all") params.set("type", query.type);
+  if (query.cursor) params.set("cursor", query.cursor);
+  params.set("limit", String(query.limit ?? 24));
+  return requestJson<PageResponse<CollectionSummary>>(`/api/collections?${params}`, signal);
+}
+
+export function getCollection(collectionId: number, signal?: AbortSignal) {
+  return requestJson<CollectionDetailResponse>(`/api/collections/${collectionId}`, signal);
+}
+
+export function getCollectionItems(
+  collectionId: number,
+  cursor?: string | null,
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams({ limit: "24" });
+  if (cursor) params.set("cursor", cursor);
+  return requestJson<CollectionItemsPage>(
+    `/api/collections/${collectionId}/items?${params}`,
+    signal,
+  );
+}
+
+export function getCollectionExportManifest(collectionId: number, signal?: AbortSignal) {
+  return requestJson<CollectionExportManifest>(`/api/collections/${collectionId}/export`, signal);
 }

@@ -15,6 +15,43 @@ have been published to immutable R2 keys with a complete, zero-failure,
 publishable report. The strict import path for future snapshots continues to
 require the same D1 and R2 gates before activation.
 
+The independently captured POAP Compass Collections snapshot
+`collections-2026-07-22-v1` is preserved by the separate, API-aware workflow in
+[Collections backup](../tools/collections-backup/README.md). It is an
+application-level backup of everything anonymously reachable through the
+reviewed public GraphQL schema and queries at capture time, not a physical copy
+of Compass's private database. Two complete structured-data passes matched
+exactly across every normalized artifact.
+
+The final local snapshot contains 2,016 collections, 35,954 collection items,
+and complete cards for 26,004 referenced drops. Its anonymous drop supplement
+adds 24,777 per-chain statistic rows, 13,165 aggregate email-claim rows, 553
+featured-drop records, and 2,505 uploaded-moment aggregates. The deterministic
+media proof covers exactly 26,550 unique public objects: 18,533 fixed-Archive
+artwork objects reused by their already-proven immutable keys, 7,331 unique new
+referenced-drop originals, and 686 unique Collection-branding objects. The
+referenced-drop artwork pass attempted every ID and ended with three terminally
+excluded references and zero failed, missing, or pending references. The
+branding capture separately retains evidence for two unsafe source responses;
+they are also excluded from the public proof.
+
+The source package, portable SQLite database, deterministic D1 shards,
+validation reports, and local media proof are complete and separate from the
+fixed Archive ZIP. The second remote R2 pass verified all 26,550 expected
+objects without uploading or reusing any object and reported zero failures. The
+snapshot-scoped remote D1 then passed its staged verification and was activated
+with `ready=1` for `collections-2026-07-22-v1`.
+
+The final private source-level package is 5,579,316,274 bytes with SHA-256
+`dbb466f3cf74a2b006a0b467445bd8472d4ae190fc49fc0d262b8a375e037bfc`.
+It is stored as 27 independently checksummed parts under the immutable private
+R2 prefix
+`collections/collections-2026-07-22-v1-final-sha256-dbb466f3cf74a2b006a0b467445bd8472d4ae190fc49fc0d262b8a375e037bfc/`.
+Every remote part was downloaded again, checked individually, and streamed in
+manifest order to reproduce the original byte length and SHA-256. The verified
+`upload-report.json` was uploaded last as the completion marker; the earlier
+draft prefix remains untouched.
+
 Do not publish a dataset merely because it can be parsed. Provenance, integrity,
 privacy, and redistribution considerations are release gates.
 
@@ -75,8 +112,15 @@ The target model intentionally separates concerns:
   aggregate counts, and media references;
 - `HOLDINGS_DB`: normalized owner address, POAP/token identity, drop identity,
   network, and source ownership metadata; and
+- `COLLECTIONS_DB`: curated collections, ordered sections, memberships,
+  collection-specific artist/organization relationships, approved-suggestion
+  and referenced-drop serving projections, anonymous drop aggregates, and media
+  provenance; and
 - `ARCHIVE_BUCKET`: original artwork plus a media manifest; later derivatives
-  use distinct keys and record how they were produced.
+  use distinct keys and record how they were produced. The bucket also stores
+  publishable Collection branding and newly preserved referenced-drop originals
+  under the Collection snapshot namespace, while proven fixed-Archive artwork
+  is reused by immutable key.
 
 The exact source columns and measured relationships are recorded in the source
 inventory. Target tables and indexes live in numbered migrations.
@@ -174,9 +218,47 @@ These flags are not a force option. They cannot authorize clearing a populated
 database or replacing an active snapshot. Create new staging databases whenever
 either condition cannot be proven.
 
+## Compass Collections capture
+
+The Collections source is a GraphQL service rather than a downloadable database.
+Its backup is therefore an application-level, point-in-time reconstruction of
+the data reachable without authentication through the reviewed public schema
+and queries, not a byte-for-byte copy of the upstream service's physical or
+private database. It cannot preserve unexposed tables, privileged fields,
+deletion history, or a transaction boundary the API does not provide. The
+capture tool pins and records the observed GraphQL schema, traverses every
+bounded root and nested connection, normalizes responses deterministically,
+captures complete cards and anonymous aggregates for every referenced drop,
+preserves eligible Collection and drop artwork, and repeats the structured-data
+pass. Publication requires the two normalized passes to match exactly.
+
+Use [Collections backup](../tools/collections-backup/README.md) for the complete
+capture, comparison, verification, portable SQLite, D1 shard, remote loader,
+media-publish, packaging, and restore contracts. Keep the complete raw
+source-level package private and immutable: although its acquisition required no
+authentication, it contains raw response pages, upstream media URLs and gateway
+metadata, operational state, and preservation evidence that the public browser
+does not need.
+
+The public D1/API projection is deliberately narrower. Collection owner
+addresses and authors of approved suggestions remain public historical fields;
+unapproved suggestions are excluded. The projection omits raw media-source
+fields, returns private or hidden drops as ID-only redacted records, and
+publishes email claims only as anonymous aggregate counts. Media URLs are
+emitted only from eligible immutable proof keys; excluded artwork never falls
+back to its source URL.
+
+Linked drop artwork is now part of the preservation workflow. Of the 26,004
+referenced drops, 18,533 reuse artwork already proven in the fixed Archive, while
+the remaining successful downloads deduplicate to 7,331 new immutable originals.
+Three drop-artwork references reached reviewed terminal exclusions with zero
+failures. Collection branding contributes another 686 unique eligible objects;
+one unfetchable Oastify URL and one HTML response remain quarantined only in the
+private evidence.
+
 ## Media keys
 
-The initial public URL contract is:
+The fixed Archive public URL contract is:
 
 ```text
 snapshots/<snapshot-id>/artwork/<drop_id>.webp
@@ -186,6 +268,17 @@ Only numeric source filenames that correspond to a known drop may enter this
 namespace. Validate detected content type rather than trusting the extension,
 and record size and SHA-256 in the generated media manifest. Never overwrite an
 active object in place.
+
+The Collections media proof may reuse those fixed-Archive keys. New originals
+use content-addressed keys under the independent Collections snapshot:
+
+```text
+snapshots/<collections-snapshot-id>/collections/media/sha256/<prefix>/<sha256>.<extension>
+snapshots/<collections-snapshot-id>/collections/drop-artwork/sha256/<prefix>/<sha256>.<extension>
+```
+
+Only rows in the reviewed public media proof may enter these namespaces. The raw
+backup, quarantine bytes, source URLs, and operational state remain private.
 
 The initial site serves original media. If derivatives are added, generate them
 offline or asynchronously and record source digest, dimensions, format,

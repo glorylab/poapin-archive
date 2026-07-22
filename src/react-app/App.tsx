@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getMeta } from "./api";
 import { Footer } from "./components/Footer";
 import { Header } from "./components/Header";
 import { EmptyState } from "./components/States";
 import { AboutPage } from "./pages/AboutPage";
 import { BrowsePage } from "./pages/BrowsePage";
+import { CollectionPage } from "./pages/CollectionPage";
+import { CollectionsPage } from "./pages/CollectionsPage";
 import { DropPage } from "./pages/DropPage";
 import { OwnerPage } from "./pages/OwnerPage";
 import { focusHashTarget, Link, useLocation } from "./router";
@@ -13,6 +15,7 @@ import { isAbortError } from "./utils";
 
 export default function App() {
   const location = useLocation();
+  const previousPathname = useRef(location.pathname);
   const [meta, setMeta] = useState<ArchiveMeta | null>(null);
   const [metaError, setMetaError] = useState(false);
 
@@ -29,6 +32,10 @@ export default function App() {
 
   useEffect(() => {
     if (location.pathname === "/") document.title = "POAP Archive · POAPin";
+    else if (location.pathname === "/collections" || location.pathname === "/collections/")
+      document.title = "POAP Collections · POAPin Archive";
+    else if (location.pathname.startsWith("/collections/"))
+      document.title = "POAP Collection · POAPin Archive";
     else if (location.pathname === "/about-data") document.title = "About the data · POAP Archive";
     else if (location.pathname.startsWith("/drop/")) document.title = "POAP drop · POAP Archive";
     else if (location.pathname.startsWith("/address/"))
@@ -39,6 +46,17 @@ export default function App() {
   useEffect(() => {
     if (!location.hash) return;
     const frame = window.requestAnimationFrame(() => focusHashTarget(location.hash));
+    return () => window.cancelAnimationFrame(frame);
+  }, [location.hash, location.pathname]);
+
+  useEffect(() => {
+    const pathnameChanged = previousPathname.current !== location.pathname;
+    previousPathname.current = location.pathname;
+    if (!pathnameChanged || location.hash) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById("main-content")?.focus({ preventScroll: true });
+    });
     return () => window.cancelAnimationFrame(frame);
   }, [location.hash, location.pathname]);
 
@@ -61,7 +79,14 @@ export default function App() {
 
 function Route({ pathname, meta }: { pathname: string; meta: ArchiveMeta | null }) {
   if (pathname === "/") return <BrowsePage meta={meta} />;
+  if (pathname === "/collections" || pathname === "/collections/") return <CollectionsPage />;
   if (pathname === "/about-data") return <AboutPage meta={meta} />;
+
+  const collectionMatch = pathname.match(/^\/collections\/([1-9]\d{0,9})\/?$/);
+  if (collectionMatch) {
+    const collectionId = Number(collectionMatch[1]);
+    if (Number.isSafeInteger(collectionId)) return <CollectionPage collectionId={collectionId} />;
+  }
 
   const dropMatch = pathname.match(/^\/drop\/([1-9]\d{0,9})\/?$/);
   if (dropMatch) {

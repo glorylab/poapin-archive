@@ -1,0 +1,26 @@
+{
+  // Temporary, upload-only bridge. Copy this beside worker.mjs as
+  // wrangler.local.jsonc, replace every placeholder exactly, deploy it, publish
+  // the snapshot, then delete the Worker and the local config.
+  "$schema": "../../../node_modules/wrangler/config-schema.json",
+  "name": "poapin-collections-r2-ingest-REPLACE_ME",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-07-22",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": false },
+  "vars": {
+    "BUCKET_NAME": "REPLACE_WITH_EXACT_R2_BUCKET_NAME",
+    "SNAPSHOT_ID": "collections-YYYY-MM-DD-v1",
+    "ARCHIVE_SNAPSHOT_ID": "YYYY-MM-DD-v1",
+    "OBJECT_PREFIX": "snapshots/",
+    "CACHE_CONTROL": "public, max-age=31536000, immutable",
+    "MAX_OBJECT_BYTES": "100000000",
+  },
+  "r2_buckets": [
+    {
+      "binding": "COLLECTIONS_BUCKET",
+      "bucket_name": "REPLACE_WITH_EXACT_R2_BUCKET_NAME",
+    },
+  ],
+}

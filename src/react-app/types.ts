@@ -58,3 +58,164 @@ export interface OwnerPageResponse extends PageResponse<Holding> {
 
 export type DropSort = "recent" | "oldest" | "popular";
 export type EventType = "all" | "virtual" | "in-person";
+
+export type CollectionType = "all" | "artist" | "organization" | "user";
+
+export interface CollectionSummary {
+  collectionId: number;
+  slug: string;
+  title: string;
+  description: string | null;
+  type: Exclude<CollectionType, "all"> | null;
+  year: number | null;
+  updatedOn: string;
+  itemCount: number;
+  sectionCount: number;
+  logoUrl: string | null;
+  bannerUrl: string | null;
+  isFeatured: boolean;
+  isVerified: boolean;
+}
+
+export interface CollectionRecord extends CollectionSummary {
+  typeRank: number | null;
+  ownerAddress: string | null;
+  externalUrl: string | null;
+  createdOn: string;
+  featuredOn: string | null;
+  verification: {
+    organizationId: number;
+    organizationName: string;
+    organizationSlug: string;
+    verifiedOn: string;
+  } | null;
+}
+
+export interface CollectionUiSettings {
+  primaryColor: string | null;
+  highlightColor: string | null;
+  darkColor: string | null;
+  greyColor: string | null;
+  whiteColor: string | null;
+  isVisibleInRecentList: boolean;
+  togglePoapElements: boolean;
+}
+
+export interface CollectionMedia {
+  role: "logo" | "banner" | "mobile_banner" | "social";
+  objectUrl: string | null;
+  contentType: string | null;
+  byteLength: number | null;
+  sha256: string | null;
+  width: number | null;
+  height: number | null;
+  status: "pending" | "stored" | "missing" | "quarantined" | "failed";
+  eligibleForPublish: boolean;
+}
+
+export interface CollectionSection {
+  sectionId: string;
+  name: string | null;
+  position: number;
+}
+
+export interface CollectionArtist {
+  artistId: string;
+  ens: string | null;
+  name: string | null;
+  slug: string | null;
+  createdAt: string;
+}
+
+export interface CollectionOrganization {
+  organizationId: number;
+  name: string;
+  slug: string;
+  createdOn: string;
+}
+
+export interface CollectionVisibleDropCard {
+  dropId: number;
+  fancyId: string;
+  title: string;
+  description: string | null;
+  startDate: string;
+  endDate: string;
+  expiryDate: string | null;
+  year: number;
+  city: string | null;
+  country: string | null;
+  eventUrl: string | null;
+  imageUrl: string | null;
+  isVirtual: boolean | null;
+  isPrivate: false;
+  isHidden: false;
+  channel: string | null;
+  platform: string | null;
+  locationType: string | null;
+  timezone: string | null;
+  integratorId: string | null;
+  createdDate: string;
+  tokenCount: number | null;
+  transferCount: number;
+  emailClaims: {
+    minted: number | null;
+    reserved: number | null;
+    total: number | null;
+  } | null;
+  featuredOn: string | null;
+  momentsUploaded: number | null;
+}
+
+export type CollectionDropCard =
+  | { dropId: number; isHidden: true }
+  | { dropId: number; isPrivate: true }
+  | CollectionVisibleDropCard;
+
+export interface CollectionItem {
+  itemId: number;
+  createdOn: string | null;
+  sections: Array<{ sectionId: string; position: number }>;
+  drop: CollectionDropCard | null;
+}
+
+export interface CollectionItemsPage extends PageResponse<CollectionItem> {
+  collectionId: number;
+  total: number;
+}
+
+export interface CollectionProfile {
+  snapshotId: string;
+  collection: CollectionRecord;
+  urls: Array<{ urlId: number; url: string | null }>;
+  uiSettings: CollectionUiSettings | null;
+  media: CollectionMedia[];
+  sections: CollectionSection[];
+  artists: CollectionArtist[];
+  organizations: CollectionOrganization[];
+}
+
+export interface CollectionDetailResponse extends CollectionProfile {
+  items: CollectionItemsPage;
+}
+
+export type CollectionExportSegmentName =
+  "metadata" | "items" | "artist-drops" | "suggestions" | "drop-stats";
+
+export interface CollectionExportManifest {
+  schemaVersion: "poapin-collection-export-v1";
+  snapshotId: string;
+  collectionId: number;
+  counts: {
+    items: number;
+    sections: number;
+    urls: number;
+    media: number;
+  };
+  segments: Array<{
+    name: CollectionExportSegmentName;
+    path: string;
+    pagination: "none" | "cursor";
+    pageSize?: number;
+  }>;
+}

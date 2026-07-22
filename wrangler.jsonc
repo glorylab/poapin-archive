@@ -30,6 +30,12 @@
       "database_id": "1b085d43-c467-4daa-a3f8-8396677dc9ca",
       "migrations_dir": "migrations/holdings",
     },
+    {
+      "binding": "COLLECTIONS_DB",
+      "database_name": "poapin-archive-collections-20260722-v1",
+      "database_id": "c1f9213b-b314-41e3-9cf9-5ad780c9e48a",
+      "migrations_dir": "migrations/collections",
+    },
   ],
   "r2_buckets": [
     {
@@ -56,6 +62,8 @@
   ],
   "vars": {
     "SNAPSHOT_ID": "2026-07-02-v1",
+    "COLLECTIONS_SNAPSHOT_ID": "collections-2026-07-22-v1",
+    "COLLECTIONS_RELEASE_ID": "collections-2026-07-22-v1-c1f9213b",
     "API_CACHE_VERSION": "v1",
     "MEDIA_BASE_URL": "https://media.poap.in",
   },
