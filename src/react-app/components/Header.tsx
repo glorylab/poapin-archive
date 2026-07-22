@@ -10,9 +10,11 @@ export function Header({ meta }: HeaderProps) {
   const active =
     pathname.startsWith("/address") || (pathname === "/" && hash === "#address")
       ? "address"
-      : pathname === "/about-data"
-        ? "about"
-        : "browse";
+      : pathname.startsWith("/collections")
+        ? "collections"
+        : pathname === "/about-data"
+          ? "about"
+          : "browse";
 
   return (
     <header className="site-header">
@@ -28,7 +30,14 @@ export function Header({ meta }: HeaderProps) {
             href="/"
             aria-current={active === "browse" ? "page" : undefined}
           >
-            Browse
+            Drops
+          </Link>
+          <Link
+            className={active === "collections" ? "nav__link is-active" : "nav__link"}
+            href="/collections"
+            aria-current={active === "collections" ? "page" : undefined}
+          >
+            Collections
           </Link>
           <Link
             className={active === "address" ? "nav__link is-active" : "nav__link"}
@@ -42,7 +51,7 @@ export function Header({ meta }: HeaderProps) {
             href="/about-data"
             aria-current={active === "about" ? "page" : undefined}
           >
-            About data
+            About
           </Link>
         </nav>
 

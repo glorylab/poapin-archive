@@ -13,7 +13,8 @@ export function Footer({ meta }: { meta: ArchiveMeta | null }) {
           </div>
         </div>
         <div className="footer__links">
-          <Link href="/">Browse</Link>
+          <Link href="/">Browse drops</Link>
+          <Link href="/collections">Collections hub</Link>
           <Link href="/about-data">About the data</Link>
           <a
             href="https://github.com/glorylab/poapin-archive"
