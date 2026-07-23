@@ -46,6 +46,16 @@ export interface Holding extends Drop {
   transferCount: number;
 }
 
+export interface PersonalHoldingReference {
+  sourceUid: string;
+  poapId: number;
+  dropId: number;
+  mintedOn: number | null;
+  ownerAddress: string;
+  network: string;
+  transferCount: number;
+}
+
 export interface PageResponse<T> {
   items: T[];
   nextCursor: string | null;
@@ -205,17 +215,22 @@ export type CollectionExportSegmentName =
 export interface CollectionExportManifest {
   schemaVersion: "poapin-collection-export-v1";
   snapshotId: string;
+  releaseId: string;
   collectionId: number;
   counts: {
     items: number;
     sections: number;
     urls: number;
     media: number;
+    artistDrops: number;
+    suggestions: number;
+    dropStats: number;
   };
   segments: Array<{
     name: CollectionExportSegmentName;
     path: string;
     pagination: "none" | "cursor";
+    count: number;
     pageSize?: number;
   }>;
 }
@@ -300,7 +315,124 @@ export interface MomentsPageResponse extends PageResponse<MomentSummary> {
 export interface MomentAuthorExportPage {
   schemaVersion: "poapin-moment-author-export-v1";
   snapshotId: string;
+  releaseId: string;
+  sourceDatabaseSha256: string;
+  buildManifestSha256: string;
   author: string;
   items: MomentDetail[];
   nextCursor: string | null;
+}
+
+export interface MomentTaggedExportPage {
+  schemaVersion: "poapin-moment-tagged-export-v1";
+  snapshotId: string;
+  releaseId: string;
+  sourceDatabaseSha256: string;
+  buildManifestSha256: string;
+  address: string;
+  items: MomentDetail[];
+  nextCursor: string | null;
+}
+
+export interface CapsuleOwnerExportPage {
+  schemaVersion: "poapin-capsule-owner-export-v1";
+  snapshotId: string;
+  releaseId: string;
+  sourceDatabaseSha256: string;
+  buildManifestSha256: string;
+  address: string;
+  items: MomentCapsule[];
+  nextCursor: string | null;
+}
+
+export interface PersonalExportManifest {
+  schemaVersion: "poapin-personal-export-v1";
+  address: string;
+  snapshots: {
+    holdings: string;
+    collections: string;
+    moments: string;
+  };
+  sources: {
+    holdings: {
+      snapshotId: string;
+    };
+    collections: {
+      snapshotId: string;
+      releaseId: string;
+    };
+    moments: {
+      snapshotId: string;
+      releaseId: string;
+      sourceDatabaseSha256: string;
+      buildManifestSha256: string;
+    };
+  };
+  counts: {
+    holdings: number;
+    authoredMoments: number;
+    taggedMoments: number;
+    ownedCollections: number;
+    ownedCapsules: number;
+  };
+  segments: {
+    holdings: { path: string; pageSize: number };
+    ownedCollections: { path: string; pageSize: number };
+    moments: { path: string; pageSize: number };
+    taggedMoments: { path: string; pageSize: number };
+    ownedCapsules: { path: string; pageSize: number };
+  };
+}
+
+export interface PersonalHoldingsPage extends PageResponse<PersonalHoldingReference> {
+  schemaVersion: "poapin-personal-holdings-page-v1";
+  snapshotId: string;
+  address: string;
+  total: number;
+  drops: Drop[];
+  unavailableDropIds: number[];
+}
+
+export interface DropDetailBatchResponse {
+  schemaVersion: "poapin-drop-detail-batch-v1";
+  snapshotId: string;
+  requestedDropIds: number[];
+  drops: Drop[];
+  unavailableDropIds: number[];
+}
+
+export interface HeldDropCollectionMembership {
+  collection: CollectionSummary;
+  matchedDropIds: number[];
+}
+
+export interface HeldDropCollectionMembershipsResponse {
+  schemaVersion: "poapin-collection-memberships-v1";
+  snapshotId: string;
+  releaseId: string;
+  requestedDropIds: number[];
+  memberships: HeldDropCollectionMembership[];
+}
+
+export interface OwnedCollectionsPage extends PageResponse<CollectionSummary> {
+  schemaVersion: "poapin-owned-collections-page-v1";
+  snapshotId: string;
+  releaseId: string;
+  address: string;
+}
+
+export interface CollectionProfilesResponse {
+  schemaVersion: "poapin-collection-profiles-v1";
+  snapshotId: string;
+  releaseId: string;
+  profiles: CollectionProfile[];
+}
+
+export interface CollectionExportPage<T> extends PageResponse<T> {
+  schemaVersion: "poapin-collection-export-v1";
+  snapshotId: string;
+  releaseId: string;
+  segment: Exclude<CollectionExportSegmentName, "metadata">;
+  collectionId: number;
+  nextPath: string | null;
 }

@@ -5,12 +5,16 @@ import type {
   CatalogSummaryRow,
   D1ReadClient,
   DropDetail,
+  DropDetailBatch,
   DropSummary,
   DropsQuery,
   ExportCatalogRow,
   HoldingRow,
   OwnerQuery,
   OwnerToken,
+  PersonalHoldingReference,
+  PersonalHoldingsPage,
+  PersonalHoldingsQuery,
 } from "./types";
 import { ApiError, encodeCursor } from "./validation";
 
@@ -107,6 +111,21 @@ const OWNER_NEXT_PAGE_SQL = `
   ORDER BY poap_id DESC, source_uid DESC
   LIMIT ?4`;
 
+const PERSONAL_HOLDINGS_FIRST_PAGE_SQL = `
+  SELECT ${HOLDING_COLUMNS}
+  FROM tokens
+  WHERE owner_address_norm = ?1
+  ORDER BY poap_id DESC, source_uid DESC
+  LIMIT ?2`;
+
+const PERSONAL_HOLDINGS_NEXT_PAGE_SQL = `
+  SELECT ${HOLDING_COLUMNS}
+  FROM tokens
+  WHERE owner_address_norm = ?1
+    AND (poap_id, source_uid) < (?2, ?3)
+  ORDER BY poap_id DESC, source_uid DESC
+  LIMIT ?4`;
+
 export const EXPORT_BATCH_SIZE = 480;
 
 const EXPORT_FIRST_PAGE_SQL = `
@@ -126,8 +145,11 @@ const EXPORT_NEXT_PAGE_SQL = `
 
 const OWNER_LOOKUP_SIZE = 48;
 const EXPORT_LOOKUP_SIZE = 96;
+export const DROP_DETAIL_BATCH_SIZE = EXPORT_LOOKUP_SIZE;
 const OWNER_CATALOG_SQL = makeIdLookupSql(SUMMARY_COLUMNS, OWNER_LOOKUP_SIZE, false);
 const EXPORT_CATALOG_SQL = makeIdLookupSql(EXPORT_COLUMNS, EXPORT_LOOKUP_SIZE, false);
+const DROP_DETAIL_BATCH_SQL = makeIdLookupSql(DETAIL_COLUMNS, DROP_DETAIL_BATCH_SIZE, true);
+const PERSONAL_HOLDINGS_CATALOG_SQL = DROP_DETAIL_BATCH_SQL;
 
 interface MetaRow {
   key: string;
@@ -219,6 +241,53 @@ export async function fetchDrop(
   return row ? toDropDetail(row, mediaBaseUrl, snapshotId) : null;
 }
 
+export async function fetchDropDetailBatch(
+  db: D1ReadClient,
+  dropIds: number[],
+  mediaBaseUrl: string,
+  snapshotId: string,
+): Promise<DropDetailBatch> {
+  if (
+    dropIds.length < 1 ||
+    dropIds.length > DROP_DETAIL_BATCH_SIZE ||
+    dropIds.some((dropId) => !Number.isSafeInteger(dropId) || dropId <= 0)
+  ) {
+    throw new ApiError(
+      400,
+      `Drop detail batches must contain between 1 and ${DROP_DETAIL_BATCH_SIZE} positive IDs.`,
+    );
+  }
+
+  const requestedDropIds = [...new Set(dropIds)].sort((left, right) => left - right);
+  const paddedIds = [
+    ...requestedDropIds,
+    ...Array(DROP_DETAIL_BATCH_SIZE - requestedDropIds.length).fill(0),
+  ];
+  const [snapshotResult, detailResult] = await db.batch<SnapshotIdRow | CatalogDetailRow>([
+    db.prepare(SNAPSHOT_ID_SQL),
+    db.prepare(DROP_DETAIL_BATCH_SQL).bind(...paddedIds),
+  ]);
+  assertSnapshotId((snapshotResult.results[0] as SnapshotIdRow | undefined)?.value, snapshotId);
+  const catalog = new Map(
+    (detailResult.results as CatalogDetailRow[]).map((row) => [
+      numeric(row.drop_id),
+      toDropDetail(row, mediaBaseUrl, snapshotId),
+    ]),
+  );
+  const drops = requestedDropIds.flatMap((dropId) => {
+    const drop = catalog.get(dropId);
+    return drop ? [drop] : [];
+  });
+
+  return {
+    schemaVersion: "poapin-drop-detail-batch-v1",
+    snapshotId,
+    requestedDropIds,
+    drops,
+    unavailableDropIds: requestedDropIds.filter((dropId) => !catalog.has(dropId)),
+  };
+}
+
 export async function fetchOwner(
   holdingsDb: D1ReadClient,
   catalogDb: D1ReadClient,
@@ -275,6 +344,82 @@ export async function fetchOwner(
         })
       : null;
   return { address: query.address, total, items, nextCursor };
+}
+
+export async function fetchPersonalHoldingsPage(
+  holdingsDb: D1ReadClient,
+  catalogDb: D1ReadClient,
+  query: PersonalHoldingsQuery,
+  snapshotId: string,
+  mediaBaseUrl: string,
+): Promise<PersonalHoldingsPage> {
+  const tokenStatement = query.cursor
+    ? holdingsDb
+        .prepare(PERSONAL_HOLDINGS_NEXT_PAGE_SQL)
+        .bind(query.address, query.cursor.p, query.cursor.u, query.limit + 1)
+    : holdingsDb.prepare(PERSONAL_HOLDINGS_FIRST_PAGE_SQL).bind(query.address, query.limit + 1);
+  const [snapshotResult, statsResult, tokenResult] = await holdingsDb.batch<
+    SnapshotIdRow | OwnerStatsRow | HoldingRow
+  >([
+    holdingsDb.prepare(SNAPSHOT_ID_SQL),
+    holdingsDb.prepare(OWNER_STATS_SQL).bind(query.address),
+    tokenStatement,
+  ]);
+  assertSnapshotId((snapshotResult.results[0] as SnapshotIdRow | undefined)?.value, snapshotId);
+
+  const total = numeric((statsResult.results[0] as OwnerStatsRow | undefined)?.token_count);
+  const allRows = tokenResult.results as HoldingRow[];
+  const hasNext = allRows.length > query.limit;
+  const rows = allRows.slice(0, query.limit);
+  const catalog = await fetchCatalogDetails(
+    catalogDb,
+    rows.map((row) => row.drop_id),
+    mediaBaseUrl,
+    snapshotId,
+  );
+  const items = rows.map((row): PersonalHoldingReference => {
+    const dropId = numeric(row.drop_id);
+    return {
+      sourceUid: row.source_uid,
+      poapId: numeric(row.poap_id),
+      dropId,
+      mintedOn: nullableNumber(row.minted_on),
+      ownerAddress: query.address,
+      network: row.network,
+      transferCount: numeric(row.transfer_count),
+    };
+  });
+  const referencedDropIds = [...new Set(items.map((item) => item.dropId))].sort(
+    (left, right) => left - right,
+  );
+  const drops = referencedDropIds.flatMap((dropId) => {
+    const drop = catalog.get(dropId);
+    return drop ? [drop] : [];
+  });
+  const unavailableDropIds = referencedDropIds.filter((dropId) => !catalog.has(dropId));
+  const last = rows.at(-1);
+  const nextCursor =
+    hasNext && last
+      ? encodeCursor({
+          v: 1,
+          c: "personal-holdings",
+          s: snapshotId,
+          f: query.filterKey,
+          p: numeric(last.poap_id),
+          u: last.source_uid,
+        })
+      : null;
+
+  return {
+    schemaVersion: "poapin-personal-holdings-page-v1",
+    snapshotId,
+    address: query.address,
+    total,
+    items,
+    drops,
+    unavailableDropIds,
+    nextCursor,
+  };
 }
 
 export async function fetchOwnerTotal(
@@ -431,6 +576,27 @@ async function fetchCatalogSummaries(
   );
 }
 
+async function fetchCatalogDetails(
+  db: D1ReadClient,
+  dropIds: number[],
+  mediaBaseUrl: string,
+  snapshotId: string,
+): Promise<Map<number, DropDetail>> {
+  const uniqueIds = [...new Set(dropIds.filter((id) => Number.isSafeInteger(id) && id > 0))];
+  const statements: D1PreparedStatement[] = [db.prepare(SNAPSHOT_ID_SQL)];
+  for (let offset = 0; offset < uniqueIds.length; offset += EXPORT_LOOKUP_SIZE) {
+    const chunk = uniqueIds.slice(offset, offset + EXPORT_LOOKUP_SIZE);
+    const padded = [...chunk, ...Array(EXPORT_LOOKUP_SIZE - chunk.length).fill(0)];
+    statements.push(db.prepare(PERSONAL_HOLDINGS_CATALOG_SQL).bind(...padded));
+  }
+  const results = await db.batch<SnapshotIdRow | CatalogDetailRow>(statements);
+  assertSnapshotId((results[0]?.results[0] as SnapshotIdRow | undefined)?.value, snapshotId);
+  const rows = results.slice(1).flatMap((result) => result.results as CatalogDetailRow[]);
+  return new Map(
+    rows.map((row) => [numeric(row.drop_id), toDropDetail(row, mediaBaseUrl, snapshotId)]),
+  );
+}
+
 function makeIdLookupSql(columns: string, size: number, includeStats: boolean): string {
   const placeholders = Array.from({ length: size }, (_, index) => `?${index + 1}`).join(", ");
   return `
@@ -445,7 +611,7 @@ function fallbackDrop(row: HoldingRow, mediaBaseUrl: string, snapshotId: string)
   return {
     dropId,
     fancyId: "",
-    title: `Archived POAP #${numeric(row.poap_id)}`,
+    title: `Archived Drop #${numeric(row.drop_id)}`,
     startDate: "",
     city: null,
     country: null,

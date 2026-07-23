@@ -490,39 +490,60 @@ describe("collections API", () => {
     expect(manifestResponse.status).toBe(200);
     const manifest = await manifestResponse.json<{
       schemaVersion: string;
-      counts: { items: number; sections: number; urls: number; media: number };
-      segments: Array<{ name: string; path: string; pagination: string }>;
+      counts: {
+        items: number;
+        sections: number;
+        urls: number;
+        media: number;
+        artistDrops: number;
+        suggestions: number;
+        dropStats: number;
+      };
+      segments: Array<{ name: string; path: string; pagination: string; count: number }>;
     }>();
     expect(manifest.schemaVersion).toBe("poapin-collection-export-v1");
-    expect(manifest.counts).toEqual({ items: 2, sections: 1, urls: 2, media: 2 });
+    expect(manifest.counts).toEqual({
+      items: 2,
+      sections: 1,
+      urls: 2,
+      media: 2,
+      artistDrops: 2,
+      suggestions: 1,
+      dropStats: 3,
+    });
     expect(manifest.segments).toEqual([
       {
         name: "metadata",
         path: "/api/collections/101/export/metadata",
         pagination: "none",
+        count: 1,
       },
       {
         name: "items",
         path: "/api/collections/101/export/items?limit=48",
         pagination: "cursor",
+        count: 2,
         pageSize: 48,
       },
       {
         name: "artist-drops",
         path: "/api/collections/101/export/artist-drops?limit=48",
         pagination: "cursor",
+        count: 2,
         pageSize: 48,
       },
       {
         name: "suggestions",
         path: "/api/collections/101/export/suggestions?limit=48",
         pagination: "cursor",
+        count: 1,
         pageSize: 48,
       },
       {
         name: "drop-stats",
         path: "/api/collections/101/export/drop-stats?limit=48",
         pagination: "cursor",
+        count: 3,
         pageSize: 48,
       },
     ]);

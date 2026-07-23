@@ -31,6 +31,7 @@ import type {
   CollectionUiSettings,
   CollectionUrlRow,
   D1ReadClient,
+  OwnedCollectionsQuery,
 } from "./types";
 import { ApiError, encodeCursor } from "./validation";
 
@@ -41,6 +42,8 @@ const MAX_PROFILE_ENTITIES = 16;
 const MAX_ITEM_SECTION_MEMBERSHIPS = 4_800;
 const MAX_DROP_STATS_CHAINS_PER_DROP = 16;
 const MAX_DROP_STATS_CHAIN_ROWS = 48 * MAX_DROP_STATS_CHAINS_PER_DROP;
+const MAX_COLLECTION_MEMBERSHIP_RELATIONS = 4_096;
+const PROFILE_BATCH_LOOKUP_SIZE = 16;
 
 const READINESS_SQL = `
   SELECT key, value
@@ -79,24 +82,26 @@ const COLLECTION_MEDIA_JOINS = `
   LEFT JOIN verified_collections verification
     ON verification.collection_id = c.collection_id`;
 
+const COLLECTION_DETAIL_COLUMNS = `
+  ${COLLECTION_SUMMARY_COLUMNS},
+  c.type_rank,
+  c.owner_address,
+  c.external_url,
+  c.created_on,
+  ui.collection_id AS ui_collection_id,
+  ui.primary_color,
+  ui.highlight_color,
+  ui.dark_color,
+  ui.grey_color,
+  ui.white_color,
+  ui.is_visible_in_recent_list,
+  ui.toggle_poap_elements,
+  verification.verified_by,
+  verifier.name AS verifier_name,
+  verifier.slug AS verifier_slug`;
+
 const COLLECTION_DETAIL_SQL = `
-  SELECT
-    ${COLLECTION_SUMMARY_COLUMNS},
-    c.type_rank,
-    c.owner_address,
-    c.external_url,
-    c.created_on,
-    ui.collection_id AS ui_collection_id,
-    ui.primary_color,
-    ui.highlight_color,
-    ui.dark_color,
-    ui.grey_color,
-    ui.white_color,
-    ui.is_visible_in_recent_list,
-    ui.toggle_poap_elements,
-    verification.verified_by,
-    verifier.name AS verifier_name,
-    verifier.slug AS verifier_slug
+  SELECT ${COLLECTION_DETAIL_COLUMNS}
   FROM collections c
   ${COLLECTION_MEDIA_JOINS}
   LEFT JOIN collection_ui_settings ui
@@ -205,9 +210,16 @@ interface CollectionCountRow {
   item_count: number;
 }
 
+interface CountRow {
+  count: number;
+}
+
 interface CollectionExportCountRow {
   item_count: number;
   section_count: number;
+  artist_drop_count: number;
+  suggestion_count: number;
+  drop_stats_count: number;
 }
 
 interface CollectionExportUrlRow {
@@ -217,6 +229,30 @@ interface CollectionExportUrlRow {
 interface CollectionExportMediaRow {
   role: string;
 }
+
+type CollectionMembershipRow = CollectionSummaryRow & {
+  drop_id: number;
+};
+
+type BatchCollectionUrlRow = CollectionUrlRow & {
+  collection_id: number;
+};
+
+type BatchCollectionMediaRow = CollectionMediaRow & {
+  collection_id: number;
+};
+
+type BatchCollectionSectionRow = CollectionSectionRow & {
+  collection_id: number;
+};
+
+type BatchCollectionArtistRow = CollectionArtistRow & {
+  collection_id: number;
+};
+
+type BatchCollectionOrganizationRow = CollectionOrganizationRow & {
+  collection_id: number;
+};
 
 type DropCardSourceRow = Omit<CollectionItemRow, "item_id" | "created_on">;
 
@@ -241,10 +277,6 @@ type CollectionSuggestionRow = DropCardSourceRow & {
   suggestion_created_on: string;
 };
 
-interface SegmentPresenceRow {
-  present: number;
-}
-
 type CollectionExportSegmentName =
   "metadata" | "items" | "artist-drops" | "suggestions" | "drop-stats";
 
@@ -252,11 +284,20 @@ interface CollectionExportManifest {
   schemaVersion: "poapin-collection-export-v1";
   snapshotId: string;
   collectionId: number;
-  counts: { items: number; sections: number; urls: number; media: number };
+  counts: {
+    items: number;
+    sections: number;
+    urls: number;
+    media: number;
+    artistDrops: number;
+    suggestions: number;
+    dropStats: number;
+  };
   segments: Array<{
     name: CollectionExportSegmentName;
     path: string;
     pagination: "none" | "cursor";
+    count: number;
     pageSize?: number;
   }>;
 }
@@ -302,6 +343,207 @@ export async function fetchCollections(
       : null;
 
   return { items, nextCursor };
+}
+
+export async function fetchOwnedCollectionCount(
+  db: D1ReadClient,
+  address: string,
+  snapshotId: string,
+): Promise<number> {
+  const [readinessResult, countResult] = await db.batch<MetaRow | CountRow>([
+    db.prepare(READINESS_SQL),
+    db
+      .prepare(
+        `
+          SELECT COUNT(*) AS count
+          FROM collections INDEXED BY idx_collections_owner_recent
+          WHERE owner_address_norm = ?1`,
+      )
+      .bind(address),
+  ]);
+  assertCollectionsReadiness(readinessResult.results as MetaRow[], snapshotId);
+  return numberValue((countResult.results[0] as CountRow | undefined)?.count);
+}
+
+export async function fetchOwnedCollectionsPage(
+  db: D1ReadClient,
+  query: OwnedCollectionsQuery,
+  snapshotId: string,
+  mediaBaseUrl: string,
+): Promise<{
+  schemaVersion: "poapin-owned-collections-page-v1";
+  snapshotId: string;
+  address: string;
+  items: CollectionSummary[];
+  nextCursor: string | null;
+}> {
+  const browse = makeOwnedCollectionsStatement(query);
+  const [readinessResult, browseResult] = await db.batch<MetaRow | CollectionSummaryRow>([
+    db.prepare(READINESS_SQL),
+    db.prepare(browse.sql).bind(...browse.values),
+  ]);
+  assertCollectionsReadiness(readinessResult.results as MetaRow[], snapshotId);
+  const allRows = browseResult.results as CollectionSummaryRow[];
+  const hasNext = allRows.length > query.limit;
+  const rows = allRows.slice(0, query.limit);
+  const items = rows.map((row) => toCollectionSummary(row, mediaBaseUrl, snapshotId));
+  const last = rows.at(-1);
+  const nextCursor =
+    hasNext && last
+      ? encodeCursor({
+          v: 1,
+          c: "owned-collections",
+          s: snapshotId,
+          f: query.filterKey,
+          p: (query.cursor?.p ?? 1) + 1,
+          k: last.updated_on,
+          i: numberValue(last.collection_id),
+        })
+      : null;
+  return {
+    schemaVersion: "poapin-owned-collections-page-v1",
+    snapshotId,
+    address: query.address,
+    items,
+    nextCursor,
+  };
+}
+
+export async function fetchCollectionMemberships(
+  db: D1ReadClient,
+  dropIds: number[],
+  snapshotId: string,
+  mediaBaseUrl: string,
+): Promise<{
+  schemaVersion: "poapin-collection-memberships-v1";
+  snapshotId: string;
+  requestedDropIds: number[];
+  memberships: Array<{ collection: CollectionSummary; matchedDropIds: number[] }>;
+}> {
+  const padded = padIds(dropIds, 96);
+  const [readinessResult, membershipsResult] = await db.batch<MetaRow | CollectionMembershipRow>([
+    db.prepare(READINESS_SQL),
+    db.prepare(makeCollectionMembershipsSql()).bind(...padded),
+  ]);
+  assertCollectionsReadiness(readinessResult.results as MetaRow[], snapshotId);
+  const rows = membershipsResult.results as CollectionMembershipRow[];
+  if (rows.length > MAX_COLLECTION_MEMBERSHIP_RELATIONS) {
+    throw new ApiError(
+      503,
+      "Collection membership result exceeds this release's supported shape.",
+      "collections_shape_unsupported",
+    );
+  }
+
+  const grouped = new Map<number, { collection: CollectionSummary; matchedDropIds: Set<number> }>();
+  for (const row of rows) {
+    const collectionId = numberValue(row.collection_id);
+    let membership = grouped.get(collectionId);
+    if (!membership) {
+      membership = {
+        collection: toCollectionSummary(row, mediaBaseUrl, snapshotId),
+        matchedDropIds: new Set(),
+      };
+      grouped.set(collectionId, membership);
+    }
+    membership.matchedDropIds.add(numberValue(row.drop_id));
+  }
+
+  return {
+    schemaVersion: "poapin-collection-memberships-v1",
+    snapshotId,
+    requestedDropIds: dropIds,
+    memberships: [...grouped.values()].map((membership) => ({
+      collection: membership.collection,
+      matchedDropIds: [...membership.matchedDropIds].sort((left, right) => left - right),
+    })),
+  };
+}
+
+export async function fetchCollectionProfilesBatch(
+  db: D1ReadClient,
+  collectionIds: number[],
+  snapshotId: string,
+  mediaBaseUrl: string,
+): Promise<{
+  schemaVersion: "poapin-collection-profiles-v1";
+  snapshotId: string;
+  profiles: CollectionProfile[];
+}> {
+  const ids = padIds(collectionIds, PROFILE_BATCH_LOOKUP_SIZE);
+  const placeholders = makePlaceholders(PROFILE_BATCH_LOOKUP_SIZE);
+  const [
+    readinessResult,
+    detailsResult,
+    urlsResult,
+    mediaResult,
+    sectionsResult,
+    artistsResult,
+    organizationsResult,
+  ] = await db.batch<
+    | MetaRow
+    | CollectionDetailRow
+    | BatchCollectionUrlRow
+    | BatchCollectionMediaRow
+    | BatchCollectionSectionRow
+    | BatchCollectionArtistRow
+    | BatchCollectionOrganizationRow
+  >([
+    db.prepare(READINESS_SQL),
+    db.prepare(makeBatchCollectionDetailsSql(placeholders)).bind(...ids),
+    db.prepare(makeBatchCollectionUrlsSql(placeholders)).bind(...ids),
+    db.prepare(makeBatchCollectionMediaSql(placeholders)).bind(...ids),
+    db.prepare(makeBatchCollectionSectionsSql(placeholders)).bind(...ids),
+    db.prepare(makeBatchCollectionArtistsSql(placeholders)).bind(...ids),
+    db.prepare(makeBatchCollectionOrganizationsSql(placeholders)).bind(...ids),
+  ]);
+  assertCollectionsReadiness(readinessResult.results as MetaRow[], snapshotId);
+
+  const details = new Map(
+    (detailsResult.results as CollectionDetailRow[]).map((row) => [
+      numberValue(row.collection_id),
+      row,
+    ]),
+  );
+  const urls = groupByCollection(urlsResult.results as BatchCollectionUrlRow[]);
+  const media = groupByCollection(mediaResult.results as BatchCollectionMediaRow[]);
+  const sections = groupByCollection(sectionsResult.results as BatchCollectionSectionRow[]);
+  const artists = groupByCollection(artistsResult.results as BatchCollectionArtistRow[]);
+  const organizations = groupByCollection(
+    organizationsResult.results as BatchCollectionOrganizationRow[],
+  );
+  const profiles: CollectionProfile[] = [];
+
+  for (const collectionId of collectionIds) {
+    const detail = details.get(collectionId);
+    if (!detail) continue;
+    const collectionUrls = urls.get(collectionId) ?? [];
+    const collectionMedia = media.get(collectionId) ?? [];
+    const collectionSections = sections.get(collectionId) ?? [];
+    const collectionArtists = artists.get(collectionId) ?? [];
+    const collectionOrganizations = organizations.get(collectionId) ?? [];
+    assertProfileBounds(collectionUrls.length, collectionMedia.length, collectionSections.length);
+    assertEntityBounds(collectionArtists.length, collectionOrganizations.length);
+    profiles.push({
+      snapshotId,
+      collection: toCollectionRecord(detail, mediaBaseUrl, snapshotId),
+      urls: collectionUrls.map((row) => ({
+        urlId: numberValue(row.url_id),
+        url: safeExternalUrl(row.url),
+      })),
+      uiSettings: toUiSettings(detail),
+      media: collectionMedia.map((row) => toCollectionMedia(row, mediaBaseUrl, snapshotId)),
+      sections: collectionSections.map(toCollectionSection),
+      artists: collectionArtists.map(toCollectionArtist),
+      organizations: collectionOrganizations.map(toCollectionOrganization),
+    });
+  }
+
+  return {
+    schemaVersion: "poapin-collection-profiles-v1",
+    snapshotId,
+    profiles,
+  };
 }
 
 export async function fetchCollectionProfile(
@@ -583,23 +825,42 @@ export async function fetchCollectionExportManifest(
   const countsSql = `
     SELECT
       c.item_count,
-      c.section_count
+      c.section_count,
+      (
+        SELECT COUNT(*)
+        FROM collection_artist_drops artist_drop
+        JOIN collection_artists artist ON artist.artist_id = artist_drop.artist_id
+        WHERE artist.collection_id = c.collection_id
+      ) AS artist_drop_count,
+      (
+        SELECT COUNT(*)
+        FROM suggested_drops suggestion
+        WHERE suggestion.collection_id = c.collection_id
+          AND suggestion.curation_status = 'approved'
+      ) AS suggestion_count,
+      (
+        SELECT COUNT(*)
+        FROM (
+          SELECT item.drop_id
+          FROM collection_items item
+          WHERE item.collection_id = c.collection_id
+          UNION
+          SELECT artist_drop.drop_id
+          FROM collection_artist_drops artist_drop
+          JOIN collection_artists artist ON artist.artist_id = artist_drop.artist_id
+          WHERE artist.collection_id = c.collection_id
+          UNION
+          SELECT suggestion.drop_id
+          FROM suggested_drops suggestion
+          WHERE suggestion.collection_id = c.collection_id
+            AND suggestion.curation_status = 'approved'
+        )
+      ) AS drop_stats_count
     FROM collections c
     WHERE c.collection_id = ?1
     LIMIT 1`;
-  const [
-    readinessResult,
-    countsResult,
-    urlsResult,
-    mediaResult,
-    artistDropsResult,
-    suggestionsResult,
-  ] = await db.batch<
-    | MetaRow
-    | CollectionExportCountRow
-    | CollectionExportUrlRow
-    | CollectionExportMediaRow
-    | SegmentPresenceRow
+  const [readinessResult, countsResult, urlsResult, mediaResult] = await db.batch<
+    MetaRow | CollectionExportCountRow | CollectionExportUrlRow | CollectionExportMediaRow
   >([
     db.prepare(READINESS_SQL),
     db.prepare(countsSql).bind(collectionId),
@@ -613,62 +874,53 @@ export async function fetchCollectionExportManifest(
         `SELECT role FROM collection_media WHERE collection_id = ?1 ORDER BY role LIMIT ${MAX_PROFILE_MEDIA + 1}`,
       )
       .bind(collectionId),
-    db
-      .prepare(
-        `SELECT 1 AS present
-         FROM collection_artist_drops artist_drop
-         JOIN collection_artists artist ON artist.artist_id = artist_drop.artist_id
-         WHERE artist.collection_id = ?1
-         LIMIT 1`,
-      )
-      .bind(collectionId),
-    db
-      .prepare(
-        `SELECT 1 AS present
-         FROM suggested_drops
-         WHERE collection_id = ?1
-           AND curation_status = 'approved'
-         LIMIT 1`,
-      )
-      .bind(collectionId),
   ]);
   assertCollectionsReadiness(readinessResult.results as MetaRow[], snapshotId);
   const row = countsResult.results[0] as CollectionExportCountRow | undefined;
   if (!row) return null;
   const urlsCount = urlsResult.results.length;
   const mediaCount = mediaResult.results.length;
+  const itemCount = numberValue(row.item_count);
+  const artistDropCount = numberValue(row.artist_drop_count);
+  const suggestionCount = numberValue(row.suggestion_count);
+  const dropStatsCount = numberValue(row.drop_stats_count);
   assertProfileBounds(urlsCount, mediaCount, numberValue(row.section_count));
 
   const basePath = `/api/collections/${collectionId}/export`;
   const segments: CollectionExportManifest["segments"] = [
-    { name: "metadata", path: `${basePath}/metadata`, pagination: "none" },
-    { name: "items", path: `${basePath}/items?limit=48`, pagination: "cursor", pageSize: 48 },
+    { name: "metadata", path: `${basePath}/metadata`, pagination: "none", count: 1 },
+    {
+      name: "items",
+      path: `${basePath}/items?limit=48`,
+      pagination: "cursor",
+      count: itemCount,
+      pageSize: 48,
+    },
   ];
-  if (artistDropsResult.results.length > 0) {
+  if (artistDropCount > 0) {
     segments.push({
       name: "artist-drops",
       path: `${basePath}/artist-drops?limit=48`,
       pagination: "cursor",
+      count: artistDropCount,
       pageSize: 48,
     });
   }
-  if (suggestionsResult.results.length > 0) {
+  if (suggestionCount > 0) {
     segments.push({
       name: "suggestions",
       path: `${basePath}/suggestions?limit=48`,
       pagination: "cursor",
+      count: suggestionCount,
       pageSize: 48,
     });
   }
-  if (
-    numberValue(row.item_count) > 0 ||
-    artistDropsResult.results.length > 0 ||
-    suggestionsResult.results.length > 0
-  ) {
+  if (dropStatsCount > 0) {
     segments.push({
       name: "drop-stats",
       path: `${basePath}/drop-stats?limit=48`,
       pagination: "cursor",
+      count: dropStatsCount,
       pageSize: 48,
     });
   }
@@ -677,13 +929,215 @@ export async function fetchCollectionExportManifest(
     snapshotId,
     collectionId,
     counts: {
-      items: numberValue(row.item_count),
+      items: itemCount,
       sections: numberValue(row.section_count),
       urls: urlsCount,
       media: mediaCount,
+      artistDrops: artistDropCount,
+      suggestions: suggestionCount,
+      dropStats: dropStatsCount,
     },
     segments,
   };
+}
+
+function makeOwnedCollectionsStatement(query: OwnedCollectionsQuery): {
+  sql: string;
+  values: unknown[];
+} {
+  const values: unknown[] = [];
+  const bind = (value: unknown): string => {
+    values.push(value);
+    return `?${values.length}`;
+  };
+  let sql = `
+    SELECT ${COLLECTION_SUMMARY_COLUMNS}
+    FROM collections c INDEXED BY idx_collections_owner_recent
+    ${COLLECTION_MEDIA_JOINS}
+    WHERE c.owner_address_norm = ${bind(query.address)}`;
+  if (query.cursor) {
+    sql += `
+      AND (c.updated_on, c.collection_id) < (
+        ${bind(query.cursor.k)},
+        ${bind(query.cursor.i)}
+      )`;
+  }
+  sql += `
+    ORDER BY c.updated_on DESC, c.collection_id DESC
+    LIMIT ${bind(query.limit + 1)}`;
+  return { sql, values };
+}
+
+function makeCollectionMembershipsSql(): string {
+  const placeholders = makePlaceholders(96);
+  return `
+    SELECT DISTINCT
+      item.drop_id,
+      ${COLLECTION_SUMMARY_COLUMNS}
+    FROM collection_items item INDEXED BY idx_collection_items_drop
+    JOIN collections c ON c.collection_id = item.collection_id
+    ${COLLECTION_MEDIA_JOINS}
+    WHERE item.drop_id IN (${placeholders})
+    ORDER BY c.collection_id ASC, item.drop_id ASC
+    LIMIT ${MAX_COLLECTION_MEMBERSHIP_RELATIONS + 1}`;
+}
+
+function makeBatchCollectionDetailsSql(placeholders: string): string {
+  return `
+    SELECT ${COLLECTION_DETAIL_COLUMNS}
+    FROM collections c
+    ${COLLECTION_MEDIA_JOINS}
+    LEFT JOIN collection_ui_settings ui
+      ON ui.collection_id = c.collection_id
+    LEFT JOIN collection_organizations verifier
+      ON verifier.organization_id = verification.verified_by
+    WHERE c.collection_id IN (${placeholders})
+    ORDER BY c.collection_id ASC`;
+}
+
+function makeBatchCollectionUrlsSql(placeholders: string): string {
+  return `
+    SELECT collection_id, url_id, url
+    FROM (
+      SELECT
+        collection_id,
+        url_id,
+        url,
+        ROW_NUMBER() OVER (
+          PARTITION BY collection_id
+          ORDER BY url_id ASC
+        ) AS profile_position
+      FROM collection_urls
+      WHERE collection_id IN (${placeholders})
+    )
+    WHERE profile_position <= ${MAX_PROFILE_URLS + 1}
+    ORDER BY collection_id ASC, url_id ASC`;
+}
+
+function makeBatchCollectionMediaSql(placeholders: string): string {
+  return `
+    SELECT
+      collection_id,
+      role,
+      object_key,
+      content_type,
+      byte_length,
+      sha256,
+      width,
+      height,
+      status,
+      eligible_for_publish
+    FROM (
+      SELECT
+        collection_id,
+        role,
+        object_key,
+        content_type,
+        byte_length,
+        sha256,
+        width,
+        height,
+        status,
+        eligible_for_publish,
+        ROW_NUMBER() OVER (
+          PARTITION BY collection_id
+          ORDER BY CASE role
+            WHEN 'logo' THEN 1
+            WHEN 'banner' THEN 2
+            WHEN 'mobile_banner' THEN 3
+            ELSE 4
+          END
+        ) AS profile_position
+      FROM collection_media
+      WHERE collection_id IN (${placeholders})
+    )
+    WHERE profile_position <= ${MAX_PROFILE_MEDIA + 1}
+    ORDER BY collection_id ASC, profile_position ASC`;
+}
+
+function makeBatchCollectionSectionsSql(placeholders: string): string {
+  return `
+    SELECT collection_id, section_id, name, position
+    FROM (
+      SELECT
+        collection_id,
+        section_id,
+        name,
+        position,
+        ROW_NUMBER() OVER (
+          PARTITION BY collection_id
+          ORDER BY position ASC, section_id ASC
+        ) AS profile_position
+      FROM collection_sections
+      WHERE collection_id IN (${placeholders})
+    )
+    WHERE profile_position <= ${MAX_PROFILE_SECTIONS + 1}
+    ORDER BY collection_id ASC, position ASC, section_id ASC`;
+}
+
+function makeBatchCollectionArtistsSql(placeholders: string): string {
+  return `
+    SELECT collection_id, artist_id, ens, name, slug, created_at
+    FROM (
+      SELECT
+        collection_id,
+        artist_id,
+        ens,
+        name,
+        slug,
+        created_at,
+        ROW_NUMBER() OVER (
+          PARTITION BY collection_id
+          ORDER BY artist_id ASC
+        ) AS profile_position
+      FROM collection_artists
+      WHERE collection_id IN (${placeholders})
+    )
+    WHERE profile_position <= ${MAX_PROFILE_ENTITIES + 1}
+    ORDER BY collection_id ASC, artist_id ASC`;
+}
+
+function makeBatchCollectionOrganizationsSql(placeholders: string): string {
+  return `
+    SELECT collection_id, organization_id, name, slug, created_on
+    FROM (
+      SELECT
+        collection_id,
+        organization_id,
+        name,
+        slug,
+        created_on,
+        ROW_NUMBER() OVER (
+          PARTITION BY collection_id
+          ORDER BY organization_id ASC
+        ) AS profile_position
+      FROM collection_organizations
+      WHERE collection_id IN (${placeholders})
+    )
+    WHERE profile_position <= ${MAX_PROFILE_ENTITIES + 1}
+    ORDER BY collection_id ASC, organization_id ASC`;
+}
+
+function makePlaceholders(size: number): string {
+  return Array.from({ length: size }, (_, index) => `?${index + 1}`).join(", ");
+}
+
+function padIds(ids: number[], size: number): number[] {
+  if (ids.length === 0 || ids.length > size) {
+    throw new ApiError(400, `This endpoint supports between 1 and ${size} IDs.`);
+  }
+  return [...ids, ...Array(size - ids.length).fill(0)];
+}
+
+function groupByCollection<T extends { collection_id: number }>(rows: T[]): Map<number, T[]> {
+  const grouped = new Map<number, T[]>();
+  for (const row of rows) {
+    const collectionId = numberValue(row.collection_id);
+    const group = grouped.get(collectionId);
+    if (group) group.push(row);
+    else grouped.set(collectionId, [row]);
+  }
+  return grouped;
 }
 
 function makeCollectionBrowseStatement(query: CollectionsQuery): {

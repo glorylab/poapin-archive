@@ -25,12 +25,24 @@ The client is responsible for navigation, progressive rendering, and exposing
 bounded server-side export controls. It must remain usable without wallet
 extensions. Static assets should be content-hashed and cached immutably.
 
+Complete personal sites are also a client responsibility. The browser validates
+one combined export manifest, follows snapshot-bound pages, paces requests,
+builds the relative static files, hashes them, and creates the ZIP. The
+generated site's Overview reads only its local manifest; each hash-routed tab
+loads its own local JSON chunks on demand. Remote media elements are created
+only after an explicit click.
+
 ### Hono Worker
 
 The API boundary owns validation, stable response shapes, cursor encoding, and
 hard limits. Routes should issue a small, predictable number of indexed
 queries. Expensive aggregation, fuzzy indexing, image processing, or whole-file
 parsing belongs in the import pipeline.
+
+The Worker does not assemble a complete personal export or ZIP. It exposes
+small manifest, page, resolver, and profile responses that can be independently
+cached and retried. This prevents one large address from becoming one large
+Worker CPU, memory, or response-size event.
 
 ### D1 catalog
 
@@ -49,6 +61,22 @@ rewriting catalog routes.
 API responses may join the two datasets in application code only with bounded
 ID lists. Never implement an unbounded request fan-out.
 
+The personal Holdings endpoint reads up to 480 tokens with an indexed keyset
+query, then looks up complete public Drop details in `CATALOG_DB` in fixed
+96-ID statements. Cursors are bound to the normalized address, page size,
+snapshot, and personal-export scope. Each page strictly partitions its unique
+token Drop references between complete public `drops` and ID-only
+`unavailableDropIds`. These arrays are mutually exclusive and jointly complete.
+A private and a missing Catalog row deliberately have the same unavailable
+form, with no placeholder metadata or reason field.
+
+After Moments and owned-Collection segments are collected, the browser resolves
+their additional Drop references through `/api/drops/export/batch` in batches
+of at most 96 submitted IDs. That endpoint applies the same public-detail versus
+opaque-unavailable partition under the fixed Holdings/Catalog snapshot. This
+keeps complete reference coverage bounded without using another dataset to
+infer whether an unavailable Drop is private or absent.
+
 ### D1 Collections
 
 `COLLECTIONS_DB` preserves the independently captured POAP Compass Collections
@@ -65,6 +93,33 @@ of bounded metadata, items, artist-drop, approved-suggestion, and drop-statistic
 segments rather than a single unbounded Worker response. Drop-statistics pages
 deduplicate all three public relation sources, expose only aggregate email-claim
 counts, and fetch per-chain rows only after private and hidden drops are redacted.
+
+Personal exports give Collections three non-interchangeable meanings:
+
+- a **held-Drop Collection** contains at least one held Drop through a formal
+  `collection_items` row;
+- an **owned Collection** has an archived normalized `owner_address` equal to
+  the requested address; and
+- an **authored-Moment Collection** is linked by the public
+  Moment-to-Collection projection.
+
+These relationship scopes are independent of the Collection record's
+`artist`, `organization`, or `user` type.
+
+The browser fetches one profile for the union of these IDs plus Collection IDs
+needed to explain separately tagged Moments, but preserves the three personal
+relationships separately. A tag association is content context, not another
+claim of authorship, membership, or ownership. Only owned Collections receive
+every declared public export segment. Held-Drop resolution deliberately
+excludes artist-Drop and approved-suggestion relations.
+
+Owned-Collection pagination requires
+`idx_collections_owner_recent(owner_address_norm, updated_on DESC,
+collection_id DESC)`, introduced by Collections migration
+`0004_owner_lookup.sql`. The query uses `INDEXED BY` so a database without the
+index fails instead of silently scanning the complete Collections table. The
+index must exist on the production binding before code exposing the owner route
+is deployed.
 
 #### Public drop-statistics contract
 
@@ -110,12 +165,12 @@ same snapshot ready.
 
 ### D1 Moments
 
-`MOMENTS_DB` preserves authored Moments independently from the fixed Drop
-archive and Collections. It stores normalized Moment content, many-to-many Drop
-relations, links, user tags, explicit capsules, public visibility decisions,
-suppression state, verified media descriptors, and the derived
-Moment-to-Collection projection. Raw gateway URLs and unrestricted media
-metadata remain outside the serving database.
+`MOMENTS_DB` preserves Moments and Capsules independently from the fixed Drop
+archive and Collections. It stores normalized Moment content, authors,
+many-to-many Drop relations, links, user tags, explicit Capsules, historical
+Capsule owners, public visibility decisions, suppression state, verified media
+descriptors, and the derived Moment-to-Collection projection. Raw gateway URLs
+and unrestricted media metadata remain outside the serving database.
 
 The public view requires an affirmative visibility row, at least one Drop, no
 relationship to a Moments-hidden Drop, and no active suppression. A media row
@@ -128,6 +183,21 @@ Every Moments request checks the configured snapshot, source-database digest,
 build-manifest digest, and activation marker. A new D1 release is staged under a
 new database UUID and stays unavailable until the resumable import journal,
 table counts, projection, indexes, foreign keys, and integrity checks pass.
+
+The personal export follows the existing public author-export cursor, with at
+most 48 complete `MomentDetail` records per page. A separate public tag export
+pages Moments in which the address appears in an archived user tag, and a
+separate Capsule-owner export pages public Capsules whose normalized archived
+owner exactly matches the address. All three use the same Moments release gate
+and keyset-page bound. They neither bypass the public visibility projection nor
+export suppressed or private source records.
+
+Authorship, tagging, and Capsule ownership are distinct historical relations.
+The same public Moment may occur in both the authored and tagged datasets, and
+the standalone Capsule dataset includes owner-matched Capsules even when they
+have no relation to a public Moment. Drop and Collection associations, media
+descriptors, links, tags, and related Capsules remain attached to each exported
+Moment.
 
 ### R2 media
 
@@ -165,6 +235,42 @@ for truly public, versioned resources. Use explicit `Cache-Control` and
 snapshot-versioned cache keys. A new snapshot ID creates a new namespace, which
 makes activation cheap and rollback explicit.
 
+## Personal-site export flow
+
+The personal-site control is an orchestration layer over existing bounded
+reads:
+
+1. The combined manifest verifies the Holdings, Collections, and Moments
+   release identities and returns exact primary counts.
+2. Holdings, owned Collections, public authored Moments, public tagged
+   Moments, and historically owner-matched public Capsules are collected by
+   keyset cursor.
+3. Each Holdings page is verified as an exact partition of public and
+   unavailable Drop references. Only public held Drop IDs are resolved to
+   formal Collection membership, in 96-ID batches; relevant Collection
+   profiles are loaded in 16-ID batches.
+4. Each owned Collection's export manifest is followed segment by segment until
+   every `nextPath` is `null`.
+5. Additional Drop IDs referenced by authored/tagged Moments and
+   owned-Collection segments are resolved through the 96-ID public Drop-detail
+   batch endpoint.
+6. The browser verifies that every packaged Drop reference belongs to exactly
+   one of the public `drops` or opaque `unavailable-drop-references` datasets,
+   checks snapshot and count invariants, generates bounded data files, hashes
+   every non-manifest file, and creates the ZIP.
+
+The static package stores media descriptors and remote URLs, not R2 objects.
+The static viewer does not attach those URLs to media elements until a visitor
+clicks. Consequently, generating or opening the Overview has no R2 media-read
+fan-out. It needs a static HTTP origin to fetch its local manifest and chunks;
+it does not need the POAPin API after generation.
+
+The old CSV/JSON endpoints remain single-response exports capped at 5,000
+holdings. The personal-site flow is the complete path for larger addresses:
+there is no unbounded replacement endpoint, only a manifest plus bounded pages.
+See [Portable personal-site export](personal-site-export.md) for response and
+package details.
+
 ## Data lifecycle
 
 A snapshot moves through these states:
@@ -192,7 +298,8 @@ API-level captures, not physical copies of the source PostgreSQL database.
 
 - Require indexed predicates for every public list route.
 - Prefer keyset cursors over offset pagination.
-- Cap requested page sizes and total export records.
+- Cap every requested page size; complete exports must follow keyset pages
+  rather than request an unbounded response.
 - Select only fields needed by the response.
 - Avoid regular expressions, decompression, image decoding, and large JSON
   parsing in Worker requests.
@@ -211,8 +318,10 @@ service should collect no account identity, avoid third-party trackers, and
 keep operational logs free of response bodies and exported histories. Address
 lookups should be rate-limited if traffic shows enumeration or cost abuse.
 
-All export responses must identify the snapshot and capture time. They make no
-claim about current ownership.
+Export contracts must identify the relevant snapshot; manifests spanning
+multiple datasets must identify each snapshot independently. Where a response
+exposes capture time, it must come from stored snapshot metadata rather than the
+request clock. Exports make no claim about current ownership.
 
 ## Failure model
 
@@ -233,6 +342,6 @@ The following require evidence from the source ZIP and load testing:
 - whether the initial D1 FTS index remains the best search strategy at full
   snapshot scale;
 - holdings sharding thresholds;
-- maximum synchronous export size and whether large exports need an offline
-  job; and
+- whether exceptionally large browser-side ZIPs need an optional resumable
+  local packaging strategy beyond the current bounded-file generator; and
 - thumbnail dimensions, formats, and generation schedule.

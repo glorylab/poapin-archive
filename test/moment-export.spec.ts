@@ -143,7 +143,7 @@ describe("Moment author export pacing", () => {
 });
 
 describe("Moment author export consistency", () => {
-  it("stops before accepting a page that changes the immutable snapshot", async () => {
+  it("stops before accepting a page that changes the immutable release", async () => {
     const progress: MomentExportProgress[] = [];
     let request = 0;
 
@@ -159,7 +159,7 @@ describe("Moment author export consistency", () => {
             : page(null, { snapshotId: "moments-other", items: [moment(2)] });
         }),
       ),
-    ).rejects.toThrow("snapshot changed");
+    ).rejects.toThrow("release changed");
     expect(progress).toEqual([{ pages: 1, records: 1 }]);
   });
 
@@ -190,7 +190,7 @@ describe("Moment author export consistency", () => {
       { schemaVersion: "unexpected-schema" as MomentAuthorExportPage["schemaVersion"] },
       "schema changed",
     ],
-    ["snapshot", { snapshotId: "" }, "did not identify its snapshot"],
+    ["release", { snapshotId: "" }, "did not identify its release"],
     ["author", { author: "0x2222222222222222222222222222222222222222" }, "author changed"],
   ])("rejects an invalid %s before reporting page progress", async (_label, overrides, message) => {
     const progress: MomentExportProgress[] = [];
@@ -282,6 +282,9 @@ function page(
   return {
     schemaVersion: "poapin-moment-author-export-v1",
     snapshotId: "moments-test",
+    releaseId: "moments-test-r1",
+    sourceDatabaseSha256: "a".repeat(64),
+    buildManifestSha256: "b".repeat(64),
     author: AUTHOR,
     items: [],
     nextCursor,
