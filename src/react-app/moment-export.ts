@@ -9,6 +9,13 @@ export interface MomentExportProgress {
   retryAfterSeconds?: number;
 }
 
+export interface MomentExportRelease {
+  snapshotId: string;
+  releaseId: string;
+  sourceDatabaseSha256: string;
+  buildManifestSha256: string;
+}
+
 interface MomentExportRuntime {
   getPage(
     address: string,
@@ -37,9 +44,10 @@ export async function collectMomentAuthorExport(
 ) {
   const normalizedAddress = address.toLowerCase();
   const items: MomentDetail[] = [];
+  const momentIds = new Set<string>();
   const seenCursors = new Set<string>();
   let cursor: string | null = null;
-  let snapshotId = "";
+  let release: MomentExportRelease | null = null;
   let pages = 0;
   let lastRequestStartedAt: number | null = null;
 
@@ -89,20 +97,27 @@ export async function collectMomentAuthorExport(
     if (page.author.toLowerCase() !== normalizedAddress) {
       throw new Error("The export author changed between pages; the download was stopped safely.");
     }
-    if (!page.snapshotId) {
-      throw new Error("The export page did not identify its snapshot; the download was stopped.");
+    const pageRelease = momentExportRelease(page);
+    if (!pageRelease) {
+      throw new Error("The export page did not identify its release; the download was stopped.");
     }
-    if (snapshotId && page.snapshotId !== snapshotId) {
+    if (release && !sameMomentExportRelease(pageRelease, release)) {
       throw new Error(
-        "The archive snapshot changed during export; please start the download again.",
+        "The archive release changed during export; please start the download again.",
       );
     }
     if (page.nextCursor && seenCursors.has(page.nextCursor)) {
       throw new Error("The export cursor repeated; the download was stopped safely.");
     }
 
-    snapshotId ||= page.snapshotId;
-    items.push(...page.items);
+    release ??= pageRelease;
+    for (const item of page.items) {
+      if (!item.momentId || momentIds.has(item.momentId)) {
+        throw new Error("The export repeated a Moment; the download was stopped safely.");
+      }
+      momentIds.add(item.momentId);
+      items.push(item);
+    }
     pages += 1;
     onProgress({ pages, records: items.length });
     signal.throwIfAborted();
@@ -112,7 +127,8 @@ export async function collectMomentAuthorExport(
   } while (cursor);
 
   signal.throwIfAborted();
-  return { normalizedAddress, snapshotId, items };
+  if (!release) throw new Error("The export did not return a release identity.");
+  return { normalizedAddress, snapshotId: release.snapshotId, release, items };
 }
 
 export async function downloadMomentAuthorExport(
@@ -121,7 +137,7 @@ export async function downloadMomentAuthorExport(
   signal: AbortSignal,
   onProgress: (progress: MomentExportProgress) => void,
 ) {
-  const { normalizedAddress, snapshotId, items } = await collectMomentAuthorExport(
+  const { normalizedAddress, snapshotId, release, items } = await collectMomentAuthorExport(
     address,
     signal,
     onProgress,
@@ -132,6 +148,7 @@ export async function downloadMomentAuthorExport(
     const payload = {
       schemaVersion: "poapin-moment-author-browser-export-v1",
       snapshotId,
+      release,
       author: normalizedAddress,
       exportedAt: new Date().toISOString(),
       count: items.length,
@@ -143,6 +160,32 @@ export async function downloadMomentAuthorExport(
 
   saveBlob(filename, toCsv(items, snapshotId), "text/csv;charset=utf-8");
   return items.length;
+}
+
+function momentExportRelease(page: MomentAuthorExportPage): MomentExportRelease | null {
+  if (
+    !page.snapshotId ||
+    !page.releaseId ||
+    !/^[0-9a-f]{64}$/.test(page.sourceDatabaseSha256) ||
+    !/^[0-9a-f]{64}$/.test(page.buildManifestSha256)
+  ) {
+    return null;
+  }
+  return {
+    snapshotId: page.snapshotId,
+    releaseId: page.releaseId,
+    sourceDatabaseSha256: page.sourceDatabaseSha256,
+    buildManifestSha256: page.buildManifestSha256,
+  };
+}
+
+function sameMomentExportRelease(left: MomentExportRelease, right: MomentExportRelease): boolean {
+  return (
+    left.snapshotId === right.snapshotId &&
+    left.releaseId === right.releaseId &&
+    left.sourceDatabaseSha256 === right.sourceDatabaseSha256 &&
+    left.buildManifestSha256 === right.buildManifestSha256
+  );
 }
 
 function abortableWait(milliseconds: number, signal: AbortSignal): Promise<void> {

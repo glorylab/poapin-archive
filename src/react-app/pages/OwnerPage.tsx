@@ -137,29 +137,43 @@ export function OwnerPage({ address, meta }: OwnerPageProps) {
 
       <section className="export-panel">
         <div>
-          <h2>Take this collection with you</h2>
-          <p>Exports preserve source IDs, network, mint time, event metadata and artwork links.</p>
+          <h2>Take the whole history with you</h2>
+          <p>
+            Build a deployable personal site with holdings, every available public Drop detail,
+            Collections, authored and tagged Moments, and public Capsules—or keep a simple
+            holdings-only data file.
+          </p>
+        </div>
+        <div className="export-panel__actions">
+          <Link className="button button--gold" href={`/address/${address}/site`}>
+            <DownloadIcon />
+            Build personal site
+          </Link>
+          {!exportTooLarge ? (
+            <>
+              <a
+                className="button button--outline"
+                href={`/api/owners/${encoded}/export.csv`}
+                download
+              >
+                Download CSV
+              </a>
+              <a
+                className="button button--outline"
+                href={`/api/owners/${encoded}/export.json`}
+                download
+              >
+                Download JSON
+              </a>
+            </>
+          ) : null}
         </div>
         {exportTooLarge ? (
           <p className="export-panel__limit" role="status">
-            This collection exceeds the current 5,000-record synchronous export limit.
+            The legacy one-file CSV/JSON download stops at 5,000 records. The personal-site exporter
+            above is paginated and supports this complete address.
           </p>
-        ) : (
-          <div className="export-panel__actions">
-            <a className="button button--gold" href={`/api/owners/${encoded}/export.csv`} download>
-              <DownloadIcon />
-              Download CSV
-            </a>
-            <a
-              className="button button--outline"
-              href={`/api/owners/${encoded}/export.json`}
-              download
-            >
-              <DownloadIcon />
-              Download JSON
-            </a>
-          </div>
-        )}
+        ) : null}
       </section>
 
       <div className="privacy-note">

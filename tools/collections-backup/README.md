@@ -493,9 +493,11 @@ npx wrangler d1 info STAGING_COLLECTIONS_DB \
     '.name == $name and .uuid == $id'
 ```
 
-List the unapplied migrations and visually require exactly `0001`, `0002`, and
-`0003`. Apply them only through the isolated binding, then require the second
-list to report no unapplied migration:
+List the unapplied migrations. A fresh snapshot-scoped target must show exactly
+`0001`, `0002`, `0003`, and `0004`; an intentionally retained verified target
+that already has the first three must show only `0004_owner_lookup.sql`. Any
+other state is a stop condition. Apply migrations only through the isolated
+binding, then require the second list to report no unapplied migration:
 
 ```sh
 npx wrangler d1 migrations list STAGING_COLLECTIONS_DB \
@@ -507,6 +509,10 @@ npx wrangler d1 migrations apply STAGING_COLLECTIONS_DB \
 npx wrangler d1 migrations list STAGING_COLLECTIONS_DB \
   --remote --config "$STAGING_CONFIG"
 ```
+
+`0004` is the repository's runtime owner-lookup index. It is not a fourth
+generated `d1/prepare` data artifact, and applying that index does not require a
+new capture, data reload, or media publication.
 
 Use the fail-closed loader for staging. Keep `--project-config` pointed at the
 real Worker configuration: its configured-ID gate is an additional fuse if an

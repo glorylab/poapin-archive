@@ -1,19 +1,28 @@
 import type {
   ArchiveMeta,
+  CollectionExportPage,
   CollectionDetailResponse,
   CollectionExportManifest,
   CollectionItemsPage,
+  CollectionProfilesResponse,
   CollectionSummary,
   CollectionType,
+  CapsuleOwnerExportPage,
   Drop,
+  DropDetailBatchResponse,
   DropSort,
   EventType,
+  HeldDropCollectionMembershipsResponse,
   MomentAuthorExportPage,
+  MomentTaggedExportPage,
   MomentDetail,
   MomentMediaKind,
   MomentsPageResponse,
+  OwnedCollectionsPage,
   OwnerPageResponse,
   PageResponse,
+  PersonalExportManifest,
+  PersonalHoldingsPage,
 } from "./types";
 
 export class ApiError extends Error {
@@ -87,6 +96,11 @@ export function getDrops(query: DropQuery, signal?: AbortSignal) {
 
 export function getDrop(dropId: number, signal?: AbortSignal) {
   return requestJson<Drop>(`/api/drops/${dropId}`, signal);
+}
+
+export function getDropDetailsBatch(dropIds: number[], signal?: AbortSignal) {
+  const params = new URLSearchParams({ ids: dropIds.join(",") });
+  return requestJson<DropDetailBatchResponse>(`/api/drops/export/batch?${params}`, signal);
 }
 
 export function getOwner(address: string, cursor?: string | null, signal?: AbortSignal) {
@@ -172,4 +186,86 @@ export function getMomentAuthorExport(
     `/api/moments/authors/${encodeURIComponent(address.toLowerCase())}/export?${params}`,
     signal,
   );
+}
+
+export function getMomentTaggedExport(
+  address: string,
+  cursor: string | null,
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams({ limit: "48" });
+  if (cursor) params.set("cursor", cursor);
+  return requestJson<MomentTaggedExportPage>(
+    `/api/moments/tags/${encodeURIComponent(address.toLowerCase())}/export?${params}`,
+    signal,
+  );
+}
+
+export function getOwnedCapsulesExport(
+  address: string,
+  cursor: string | null,
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams({ limit: "48" });
+  if (cursor) params.set("cursor", cursor);
+  return requestJson<CapsuleOwnerExportPage>(
+    `/api/capsules/owners/${encodeURIComponent(address.toLowerCase())}/export?${params}`,
+    signal,
+  );
+}
+
+export function getPersonalExportManifest(address: string, signal?: AbortSignal) {
+  return requestJson<PersonalExportManifest>(
+    `/api/owners/${encodeURIComponent(address.toLowerCase())}/export/manifest`,
+    signal,
+  );
+}
+
+export function getPersonalHoldingsPage(
+  address: string,
+  cursor?: string | null,
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams({ limit: "480" });
+  if (cursor) params.set("cursor", cursor);
+  return requestJson<PersonalHoldingsPage>(
+    `/api/owners/${encodeURIComponent(address.toLowerCase())}/export/holdings?${params}`,
+    signal,
+  );
+}
+
+export function resolveHeldDropCollections(dropIds: number[], signal?: AbortSignal) {
+  const params = new URLSearchParams({ drop_ids: dropIds.join(",") });
+  return requestJson<HeldDropCollectionMembershipsResponse>(
+    `/api/collections/resolve?${params}`,
+    signal,
+  );
+}
+
+export function getOwnedCollectionsExport(
+  address: string,
+  cursor?: string | null,
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams({ limit: "48" });
+  if (cursor) params.set("cursor", cursor);
+  return requestJson<OwnedCollectionsPage>(
+    `/api/collections/owners/${encodeURIComponent(address.toLowerCase())}/export?${params}`,
+    signal,
+  );
+}
+
+export function getCollectionProfiles(collectionIds: number[], signal?: AbortSignal) {
+  const params = new URLSearchParams({ ids: collectionIds.join(",") });
+  return requestJson<CollectionProfilesResponse>(`/api/collections/export/batch?${params}`, signal);
+}
+
+export function getCollectionExportPath<T>(
+  path: string,
+  signal?: AbortSignal,
+): Promise<CollectionExportPage<T>> {
+  if (!/^\/api\/collections\/[1-9]\d{0,9}\/export\/[a-z-]+(?:\?.*)?$/.test(path)) {
+    return Promise.reject(new Error("The collection export returned an unsafe segment path."));
+  }
+  return requestJson<CollectionExportPage<T>>(path, signal);
 }

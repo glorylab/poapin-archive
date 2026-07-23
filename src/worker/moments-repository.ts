@@ -21,6 +21,16 @@ export interface MomentCursor {
   i: string;
 }
 
+export interface CapsuleCursor {
+  v: 1;
+  c: "capsules";
+  s: string;
+  f: string;
+  p: number;
+  k: string;
+  i: number;
+}
+
 export interface MomentsQuery {
   author: string | null;
   dropId: number | null;
@@ -36,6 +46,14 @@ export interface MomentPageQuery {
   limit: number;
   cursor: MomentCursor | null;
   filterKey: string;
+}
+
+export interface CapsuleOwnerQuery {
+  address: string;
+  limit: number;
+  cursor: CapsuleCursor | null;
+  filterKey: string;
+  canonicalSearch: string;
 }
 
 export interface MomentsMeta {
@@ -191,8 +209,7 @@ interface MomentTagRow {
   created_on: string | null;
 }
 
-interface MomentCapsuleRow {
-  moment_id: string;
+interface PublicCapsuleRow {
   capsule_id: number;
   external_id: string | null;
   title: string | null;
@@ -204,6 +221,10 @@ interface MomentCapsuleRow {
   url: string | null;
   owner: string | null;
   created_on: string;
+}
+
+interface MomentCapsuleRow extends PublicCapsuleRow {
+  moment_id: string;
 }
 
 interface CountRow {
@@ -270,6 +291,19 @@ const SUMMARY_COLUMNS = `
   moment.created_on,
   moment.updated_on,
   moment.updated`;
+
+const CAPSULE_COLUMNS = `
+  capsule.capsule_id,
+  capsule.external_id,
+  capsule.title,
+  capsule.description,
+  capsule.image_object_key,
+  capsule.image_sha256,
+  capsule.image_mime_type,
+  capsule.image_archive_status,
+  capsule.url,
+  capsule.owner,
+  capsule.created_on`;
 
 export function momentsReleaseIdentity(
   bindings: Pick<
@@ -414,6 +448,174 @@ export async function fetchAuthorMomentExportPage(
     author,
     items: await hydrateDetails(db, page.items, snapshotId, mediaBaseUrl),
     nextCursor: page.nextCursor,
+  };
+}
+
+export async function fetchAuthorMomentCount(
+  db: D1ReadClient,
+  author: string,
+  release: MomentsReleaseIdentity,
+): Promise<number> {
+  const [readinessResult, countResult] = await db.batch<MetaRow | CountRow>([
+    db.prepare(READINESS_SQL),
+    db
+      .prepare(
+        `
+          SELECT COUNT(*) AS count
+          FROM public_moments moment
+          WHERE moment.author_address_norm = ?1`,
+      )
+      .bind(author),
+  ]);
+  assertMomentsReadiness(readinessResult.results as MetaRow[], release);
+  return numberValue((countResult.results[0] as CountRow | undefined)?.count);
+}
+
+export async function fetchPersonalMomentRelationCounts(
+  db: D1ReadClient,
+  address: string,
+  release: MomentsReleaseIdentity,
+): Promise<{
+  authoredMoments: number;
+  taggedMoments: number;
+  ownedCapsules: number;
+}> {
+  const [readinessResult, authoredResult, taggedResult, capsulesResult] = await db.batch<
+    MetaRow | CountRow
+  >([
+    db.prepare(READINESS_SQL),
+    db
+      .prepare(
+        `
+          SELECT COUNT(*) AS count
+          FROM public_moments moment
+          WHERE moment.author_address_norm = ?1`,
+      )
+      .bind(address),
+    db
+      .prepare(
+        `
+          SELECT COUNT(*) AS count
+          FROM (
+            SELECT tag.moment_id
+            FROM moment_user_tags tag INDEXED BY idx_moment_user_tags_address
+            JOIN public_moments moment ON moment.moment_id = tag.moment_id
+            WHERE tag.address_norm = ?1
+            GROUP BY tag.moment_id
+          )`,
+      )
+      .bind(address),
+    db
+      .prepare(
+        `
+          SELECT COUNT(*) AS count
+          FROM capsules capsule INDEXED BY idx_capsules_owner
+          WHERE capsule.owner_address_norm = ?1
+            AND EXISTS (
+              SELECT 1
+              FROM public_capsules allowed_capsule
+              WHERE allowed_capsule.capsule_id = capsule.capsule_id
+            )`,
+      )
+      .bind(address),
+  ]);
+  assertMomentsReadiness(readinessResult.results as MetaRow[], release);
+  return {
+    authoredMoments: numberValue((authoredResult.results[0] as CountRow | undefined)?.count),
+    taggedMoments: numberValue((taggedResult.results[0] as CountRow | undefined)?.count),
+    ownedCapsules: numberValue((capsulesResult.results[0] as CountRow | undefined)?.count),
+  };
+}
+
+export async function fetchTaggedMomentExportPage(
+  db: D1ReadClient,
+  address: string,
+  query: MomentPageQuery,
+  release: MomentsReleaseIdentity,
+  mediaBaseUrl: string,
+): Promise<{
+  schemaVersion: "poapin-moment-tagged-export-v1";
+  snapshotId: string;
+  address: string;
+  items: MomentDetail[];
+  nextCursor: string | null;
+}> {
+  const snapshotId = release.snapshotId;
+  assertPageQuery(query, snapshotId);
+  const browse = makeTaggedMomentStatement(address, query);
+  const [readinessResult, browseResult] = await db.batch<MetaRow | MomentSummaryRow>([
+    db.prepare(READINESS_SQL),
+    db.prepare(browse.sql).bind(...browse.values),
+  ]);
+  assertMomentsReadiness(readinessResult.results as MetaRow[], release);
+  const allRows = browseResult.results as MomentSummaryRow[];
+  const hasNext = allRows.length > query.limit;
+  const rows = allRows.slice(0, query.limit);
+  const summaries = await hydrateSummaries(db, rows, snapshotId, mediaBaseUrl);
+  const last = rows.at(-1);
+  const nextCursor =
+    hasNext && last
+      ? encodeMomentCursor({
+          v: 1,
+          c: "moments",
+          s: snapshotId,
+          f: query.filterKey,
+          p: (query.cursor?.p ?? 1) + 1,
+          k: last.created_on,
+          i: last.moment_id,
+        })
+      : null;
+  return {
+    schemaVersion: "poapin-moment-tagged-export-v1",
+    snapshotId,
+    address,
+    items: await hydrateDetails(db, summaries, snapshotId, mediaBaseUrl),
+    nextCursor,
+  };
+}
+
+export async function fetchOwnedCapsuleExportPage(
+  db: D1ReadClient,
+  query: CapsuleOwnerQuery,
+  release: MomentsReleaseIdentity,
+  mediaBaseUrl: string,
+): Promise<{
+  schemaVersion: "poapin-capsule-owner-export-v1";
+  snapshotId: string;
+  address: string;
+  items: MomentCapsule[];
+  nextCursor: string | null;
+}> {
+  const snapshotId = release.snapshotId;
+  assertCapsulePageQuery(query, snapshotId);
+  const browse = makeOwnedCapsulesStatement(query);
+  const [readinessResult, browseResult] = await db.batch<MetaRow | PublicCapsuleRow>([
+    db.prepare(READINESS_SQL),
+    db.prepare(browse.sql).bind(...browse.values),
+  ]);
+  assertMomentsReadiness(readinessResult.results as MetaRow[], release);
+  const allRows = browseResult.results as PublicCapsuleRow[];
+  const hasNext = allRows.length > query.limit;
+  const rows = allRows.slice(0, query.limit);
+  const last = rows.at(-1);
+  const nextCursor =
+    hasNext && last
+      ? encodeMomentCursor({
+          v: 1,
+          c: "capsules",
+          s: snapshotId,
+          f: query.filterKey,
+          p: (query.cursor?.p ?? 1) + 1,
+          k: last.created_on,
+          i: numberValue(last.capsule_id),
+        })
+      : null;
+  return {
+    schemaVersion: "poapin-capsule-owner-export-v1",
+    snapshotId,
+    address: query.address,
+    items: rows.map((row) => toMomentCapsule(row, snapshotId, mediaBaseUrl)),
+    nextCursor,
   };
 }
 
@@ -580,6 +782,80 @@ export function makeBrowseStatement(query: MomentsQuery): { sql: string; values:
   }
   sql += `
     ORDER BY moment.created_on DESC, moment.moment_id DESC
+    LIMIT ${bind(query.limit + 1)}`;
+  return { sql, values };
+}
+
+export function makeTaggedMomentStatement(
+  address: string,
+  query: MomentPageQuery,
+): { sql: string; values: unknown[] } {
+  const values: unknown[] = [];
+  const bind = (value: unknown): string => {
+    values.push(value);
+    return `?${values.length}`;
+  };
+  let sql = `
+    WITH tagged_moments AS (
+      SELECT tag.moment_id
+      FROM moment_user_tags tag INDEXED BY idx_moment_user_tags_address
+      WHERE tag.address_norm = ${bind(address)}
+      GROUP BY tag.moment_id
+    )
+    SELECT ${SUMMARY_COLUMNS}
+    FROM tagged_moments tagged
+    JOIN public_moments moment ON moment.moment_id = tagged.moment_id
+    WHERE 1 = 1`;
+  if (query.mediaKind) {
+    sql += `
+      AND EXISTS (
+        SELECT 1
+        FROM moment_media media
+        WHERE media.moment_id = moment.moment_id
+          AND media.media_kind = ${bind(query.mediaKind)}
+          AND ${PUBLIC_MEDIA_PREDICATE}
+      )`;
+  }
+  if (query.cursor) {
+    sql += `
+      AND (moment.created_on, moment.moment_id) < (
+        ${bind(query.cursor.k)},
+        ${bind(query.cursor.i)}
+      )`;
+  }
+  sql += `
+    ORDER BY moment.created_on DESC, moment.moment_id DESC
+    LIMIT ${bind(query.limit + 1)}`;
+  return { sql, values };
+}
+
+export function makeOwnedCapsulesStatement(query: CapsuleOwnerQuery): {
+  sql: string;
+  values: unknown[];
+} {
+  const values: unknown[] = [];
+  const bind = (value: unknown): string => {
+    values.push(value);
+    return `?${values.length}`;
+  };
+  let sql = `
+    SELECT ${CAPSULE_COLUMNS}
+    FROM capsules capsule INDEXED BY idx_capsules_owner
+    WHERE capsule.owner_address_norm = ${bind(query.address)}
+      AND EXISTS (
+        SELECT 1
+        FROM public_capsules allowed_capsule
+        WHERE allowed_capsule.capsule_id = capsule.capsule_id
+      )`;
+  if (query.cursor) {
+    sql += `
+      AND (capsule.created_on, capsule.capsule_id) < (
+        ${bind(query.cursor.k)},
+        ${bind(query.cursor.i)}
+      )`;
+  }
+  sql += `
+    ORDER BY capsule.created_on DESC, capsule.capsule_id DESC
     LIMIT ${bind(query.limit + 1)}`;
   return { sql, values };
 }
@@ -944,7 +1220,7 @@ function toMomentTag(row: MomentTagRow): MomentUserTag {
 }
 
 function toMomentCapsule(
-  row: MomentCapsuleRow,
+  row: PublicCapsuleRow,
   snapshotId: string,
   mediaBaseUrl: string,
 ): MomentCapsule {
@@ -1143,6 +1419,30 @@ function assertPageQuery(
   }
 }
 
+function assertCapsulePageQuery(query: CapsuleOwnerQuery, snapshotId: string): void {
+  if (!/^0x[0-9a-f]{40}$/.test(query.address)) {
+    throw new ApiError(400, "Capsule owner address is invalid.");
+  }
+  if (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > MAX_PAGE_SIZE) {
+    throw new ApiError(400, `Capsule page size must be between 1 and ${MAX_PAGE_SIZE}.`);
+  }
+  if (
+    query.cursor &&
+    (query.cursor.v !== 1 ||
+      query.cursor.c !== "capsules" ||
+      query.cursor.s !== snapshotId ||
+      query.cursor.f !== query.filterKey ||
+      !Number.isInteger(query.cursor.p) ||
+      query.cursor.p < 2 ||
+      query.cursor.p > 10_000 ||
+      !query.cursor.k ||
+      !Number.isSafeInteger(query.cursor.i) ||
+      query.cursor.i <= 0)
+  ) {
+    throw new ApiError(400, "Capsule cursor does not match this owner export.");
+  }
+}
+
 function assertBound(actual: number, maximum: number, relation: string): void {
   if (actual > maximum) {
     throw new ApiError(
@@ -1199,7 +1499,7 @@ function groupMapped<Row, Value>(
   return grouped;
 }
 
-function encodeMomentCursor(cursor: MomentCursor): string {
+function encodeMomentCursor(cursor: MomentCursor | CapsuleCursor): string {
   const bytes = new TextEncoder().encode(JSON.stringify(cursor));
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);

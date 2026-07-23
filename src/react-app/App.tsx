@@ -12,6 +12,7 @@ import { MomentDetailPage } from "./pages/MomentDetailPage";
 import { MomentsPage } from "./pages/MomentsPage";
 import { OwnerPage } from "./pages/OwnerPage";
 import { OwnerMomentsPage } from "./pages/OwnerMomentsPage";
+import { PersonalSiteExportPage } from "./pages/PersonalSiteExportPage";
 import { focusHashTarget, Link, useLocation } from "./router";
 import type { ArchiveMeta } from "./types";
 import { isAbortError } from "./utils";
@@ -45,6 +46,8 @@ export default function App() {
       document.title = "POAP Moment · POAPin Archive";
     else if (/^\/owners\/[^/]+\/moments\/?$/.test(location.pathname))
       document.title = "Created Moments · POAPin Archive";
+    else if (/^\/address\/[^/]+\/site\/?$/.test(location.pathname))
+      document.title = "Build a personal POAP site · POAPin Archive";
     else if (location.pathname === "/about-data") document.title = "About the data · POAP Archive";
     else if (location.pathname.startsWith("/drop/")) document.title = "POAP drop · POAP Archive";
     else if (location.pathname.startsWith("/address/"))
@@ -99,6 +102,11 @@ function Route({ pathname, meta }: { pathname: string; meta: ArchiveMeta | null 
 
   const ownerMomentsMatch = pathname.match(/^\/owners\/(0x[a-fA-F0-9]{40})\/moments\/?$/);
   if (ownerMomentsMatch) return <OwnerMomentsPage address={ownerMomentsMatch[1].toLowerCase()} />;
+
+  const personalSiteMatch = pathname.match(/^\/address\/(0x[a-fA-F0-9]{40})\/site\/?$/);
+  if (personalSiteMatch) {
+    return <PersonalSiteExportPage address={personalSiteMatch[1].toLowerCase()} />;
+  }
 
   const collectionMatch = pathname.match(/^\/collections\/([1-9]\d{0,9})\/?$/);
   if (collectionMatch) {

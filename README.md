@@ -33,6 +33,10 @@ artwork served from [`media.poap.in`](https://media.poap.in).
 - A Moments hub with Drop and Collection albums, authored timelines,
   bandwidth-safe detail pages, and bounded metadata exports.
 - An address view for finding and exporting the POAPs recorded for an address.
+- A browser-built, deployable personal-site ZIP containing complete paginated
+  Holdings, normalized public and unavailable Drop references, relevant
+  Collection profiles and owned-Collection exports, public authored and tagged
+  Moments, and historically owned Capsules.
 - A transparent archive: every published dataset should identify its source,
   capture time, checksum, and known limitations.
 - A small service that can remain affordable even when it becomes popular.
@@ -42,16 +46,16 @@ No wallet connection is required.
 
 ## Architecture
 
-| Layer       | Technology                       | Responsibility                                                   |
-| ----------- | -------------------------------- | ---------------------------------------------------------------- |
-| Web         | React + Vite                     | Accessible browsing, filtering, and export controls              |
-| API         | Hono on Cloudflare Workers       | Validation, bounded reads, and cache-safe responses              |
-| Catalog     | Cloudflare D1 (`CATALOG_DB`)     | Drops, snapshot metadata, search fields, and artwork references  |
-| Holdings    | Cloudflare D1 (`HOLDINGS_DB`)    | Address-to-token lookup, isolated from catalog traffic           |
-| Collections | Cloudflare D1 (`COLLECTIONS_DB`) | Curated collections, memberships, sections, and export relations |
-| Moments     | Cloudflare D1 (`MOMENTS_DB`)     | Authored Moments, Drop links, albums, media proof, and exports   |
-| Media       | Cloudflare R2 (`ARCHIVE_BUCKET`) | Immutable original artwork; derived thumbnails may follow later  |
-| Cache       | Workers Cache + HTTP caching     | Snapshot-versioned public GET responses and immutable media      |
+| Layer       | Technology                       | Responsibility                                                        |
+| ----------- | -------------------------------- | --------------------------------------------------------------------- |
+| Web         | React + Vite                     | Browsing, export collection, static-site generation, and ZIP creation |
+| API         | Hono on Cloudflare Workers       | Validation, bounded reads, and cache-safe responses                   |
+| Catalog     | Cloudflare D1 (`CATALOG_DB`)     | Drops, snapshot metadata, search fields, and artwork references       |
+| Holdings    | Cloudflare D1 (`HOLDINGS_DB`)    | Address-to-token lookup, isolated from catalog traffic                |
+| Collections | Cloudflare D1 (`COLLECTIONS_DB`) | Curated collections, memberships, sections, and export relations      |
+| Moments     | Cloudflare D1 (`MOMENTS_DB`)     | Moments, tags, Capsules, Drop links, albums, media proof, and exports |
+| Media       | Cloudflare R2 (`ARCHIVE_BUCKET`) | Immutable original artwork; derived thumbnails may follow later       |
+| Cache       | Workers Cache + HTTP caching     | Snapshot-versioned public GET responses and immutable media           |
 
 Splitting catalog, holdings, Collections, and Moments keeps their access
 patterns and snapshot lifecycles independent. Cache is an expendable
@@ -68,6 +72,8 @@ time:
 - use indexed keyset pagination with hard page-size limits;
 - precompute counts, normalized search fields, and export-ready records during
   import rather than during a request;
+- collect complete personal exports through bounded pages, then generate and
+  compress the static site in the browser rather than in a Worker request;
 - store and serve original images from R2 without synchronous transformation;
 - keep imports, integrity scans, and derivative generation outside the request
   path; and
@@ -97,6 +103,10 @@ An address export describes the selected archive snapshot, not current
 ownership. Persistent Worker invocation logs are disabled by default because
 address routes would otherwise retain lookup intent; operators must review all
 Cloudflare logging and retention settings before enabling them.
+
+A downloaded personal site contains the selected address and its public
+archived history. Publishing that ZIP makes the packaged metadata public at the
+chosen host; the archive does not upload it automatically.
 
 ## Local development
 
@@ -166,6 +176,31 @@ gateway records. The first media-bound public projection contains 24,459
 Moments and 26,198 public media records. See
 [Moments preservation](docs/moments.md) and the
 [Moments backup guide](tools/moments-backup/README.md).
+
+## Portable personal sites
+
+The address page can collect a complete personal archive through the paginated
+APIs and build a pure-static ZIP in the browser. Each dataset is held to one
+unchanged release identity during collection; Holdings, Collections, and
+Moments remain three independent snapshots rather than one shared capture time.
+The package contains normalized Holdings; public details for every referenced
+Drop the Catalog can expose; opaque Drop-ID references where private and missing
+records are intentionally indistinguishable; three distinct Collection
+relationship views; complete public exports for historically owned
+Collections; separate public authored and tagged Moment views; and public
+Capsules whose archived owner is the address.
+
+Media remains remote: the generated page mounts an image, video, or audio source
+only after a visitor explicitly asks to load it. The ZIP therefore remains
+metadata-focused and does not duplicate the R2 media archive, although its
+aggregate size still depends on the address and destination limits. It also
+includes integrity metadata and deployment prompts for Cloudflare, Vercel,
+Filebase, and ICP.
+
+See [Portable personal-site export](docs/personal-site-export.md) for the API,
+data, packaging, media-loading, and deployment contracts. The legacy one-file
+CSV/JSON address downloads remain capped at 5,000 holdings; the personal-site
+flow follows keyset pages and does not inherit that whole-response limit.
 
 ## Deployment
 

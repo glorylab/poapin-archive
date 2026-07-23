@@ -48,6 +48,22 @@ export interface OwnerQuery {
   canonicalSearch: string;
 }
 
+export interface PersonalHoldingsQuery {
+  address: string;
+  limit: number;
+  cursor: PersonalHoldingsCursor | null;
+  filterKey: string;
+  canonicalSearch: string;
+}
+
+export interface OwnedCollectionsQuery {
+  address: string;
+  limit: number;
+  cursor: OwnedCollectionsCursor | null;
+  filterKey: string;
+  canonicalSearch: string;
+}
+
 export interface CollectionsQuery {
   q: string | null;
   ftsQuery: string | null;
@@ -93,6 +109,25 @@ export interface OwnerCursor {
   f: string;
   p: number;
   u: string;
+}
+
+export interface PersonalHoldingsCursor {
+  v: 1;
+  c: "personal-holdings";
+  s: string;
+  f: string;
+  p: number;
+  u: string;
+}
+
+export interface OwnedCollectionsCursor {
+  v: 1;
+  c: "owned-collections";
+  s: string;
+  f: string;
+  p: number;
+  k: string;
+  i: number;
 }
 
 export interface CollectionCursor {
@@ -213,6 +248,14 @@ export interface DropDetail extends DropSummary {
   reservationsUnminted: number;
 }
 
+export interface DropDetailBatch {
+  schemaVersion: "poapin-drop-detail-batch-v1";
+  snapshotId: string;
+  requestedDropIds: number[];
+  drops: DropDetail[];
+  unavailableDropIds: number[];
+}
+
 export interface OwnerToken extends DropSummary {
   sourceUid: string;
   poapId: number;
@@ -220,6 +263,27 @@ export interface OwnerToken extends DropSummary {
   ownerAddress: string;
   network: string;
   transferCount: number;
+}
+
+export interface PersonalHoldingReference {
+  sourceUid: string;
+  poapId: number;
+  dropId: number;
+  mintedOn: number | null;
+  ownerAddress: string;
+  network: string;
+  transferCount: number;
+}
+
+export interface PersonalHoldingsPage {
+  schemaVersion: "poapin-personal-holdings-page-v1";
+  snapshotId: string;
+  address: string;
+  total: number;
+  items: PersonalHoldingReference[];
+  drops: DropDetail[];
+  unavailableDropIds: number[];
+  nextCursor: string | null;
 }
 
 export interface ExportRecord {

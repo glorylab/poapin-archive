@@ -11,10 +11,16 @@ import type {
   DropSort,
   DropsQuery,
   EventType,
+  OwnedCollectionsCursor,
+  OwnedCollectionsQuery,
   OwnerCursor,
   OwnerQuery,
+  PersonalHoldingsCursor,
+  PersonalHoldingsQuery,
 } from "./types";
 import type {
+  CapsuleCursor,
+  CapsuleOwnerQuery,
   MomentCursor,
   MomentMediaKind,
   MomentPageQuery,
@@ -28,6 +34,8 @@ const ARTIST_ID = /^[A-Za-z0-9-]{1,128}$/;
 const SEARCH_TERM = /[\p{L}\p{N}]+/gu;
 const DROP_PARAMS = new Set(["q", "year", "type", "sort", "cursor", "limit"]);
 const OWNER_PARAMS = new Set(["cursor", "limit"]);
+const ID_LIST_PARAMS = new Set(["ids"]);
+const DROP_ID_LIST_PARAMS = new Set(["drop_ids"]);
 const COLLECTION_PARAMS = new Set(["q", "year", "type", "cursor", "limit"]);
 const COLLECTION_ITEM_PARAMS = new Set(["cursor", "limit"]);
 const MOMENT_PARAMS = new Set(["author", "drop", "collection", "media", "cursor", "limit"]);
@@ -157,6 +165,32 @@ export function parseMomentPageQuery(
   return { mediaKind, limit, cursor, filterKey, canonicalSearch: canonical.toString() };
 }
 
+export function parseCapsuleOwnerQuery(
+  url: URL,
+  rawAddress: string,
+  snapshotId: string,
+  releaseKey: string,
+): CapsuleOwnerQuery {
+  assertKnownParams(url.searchParams, OWNER_PARAMS);
+  const address = normalizeAddress(rawAddress);
+  const limit = parseLimit(url.searchParams, 48);
+  const filterKey = JSON.stringify({
+    scope: "capsule-owner-export",
+    address,
+    releaseKey,
+    limit,
+  });
+  const rawCursor = optionalParam(url.searchParams, "cursor");
+  const cursor =
+    rawCursor === null
+      ? null
+      : validateCapsuleCursor(decodeCursor<CapsuleCursor>(rawCursor), snapshotId, filterKey);
+  const canonical = new URLSearchParams();
+  if (cursor) canonical.set("cursor", encodeCursor(cursor));
+  canonical.set("limit", String(limit));
+  return { address, limit, cursor, filterKey, canonicalSearch: canonical.toString() };
+}
+
 export function parseDropsQuery(url: URL, snapshotId: string): DropsQuery {
   assertKnownParams(url.searchParams, DROP_PARAMS);
 
@@ -211,6 +245,77 @@ export function parseOwnerQuery(url: URL, rawAddress: string, snapshotId: string
   canonical.set("limit", String(limit));
 
   return { address, limit, cursor, filterKey, canonicalSearch: canonical.toString() };
+}
+
+export function parsePersonalHoldingsQuery(
+  url: URL,
+  rawAddress: string,
+  snapshotId: string,
+): PersonalHoldingsQuery {
+  assertKnownParams(url.searchParams, OWNER_PARAMS);
+  const address = normalizeAddress(rawAddress);
+  const limit = parseBoundedLimit(url.searchParams, 480, 480);
+  const filterKey = JSON.stringify({ scope: "personal-holdings", address, limit });
+  const rawCursor = optionalParam(url.searchParams, "cursor");
+  const cursor =
+    rawCursor === null
+      ? null
+      : validatePersonalHoldingsCursor(
+          decodeCursor<PersonalHoldingsCursor>(rawCursor),
+          snapshotId,
+          filterKey,
+        );
+
+  const canonical = new URLSearchParams();
+  if (cursor) canonical.set("cursor", encodeCursor(cursor));
+  canonical.set("limit", String(limit));
+  return { address, limit, cursor, filterKey, canonicalSearch: canonical.toString() };
+}
+
+export function parseOwnedCollectionsQuery(
+  url: URL,
+  rawAddress: string,
+  snapshotId: string,
+): OwnedCollectionsQuery {
+  assertKnownParams(url.searchParams, OWNER_PARAMS);
+  const address = normalizeAddress(rawAddress);
+  const limit = parseLimit(url.searchParams, 48);
+  const filterKey = JSON.stringify({ scope: "owned-collections", address, limit });
+  const rawCursor = optionalParam(url.searchParams, "cursor");
+  const cursor =
+    rawCursor === null
+      ? null
+      : validateOwnedCollectionsCursor(
+          decodeCursor<OwnedCollectionsCursor>(rawCursor),
+          snapshotId,
+          filterKey,
+        );
+
+  const canonical = new URLSearchParams();
+  if (cursor) canonical.set("cursor", encodeCursor(cursor));
+  canonical.set("limit", String(limit));
+  return { address, limit, cursor, filterKey, canonicalSearch: canonical.toString() };
+}
+
+export function parseDropIdsQuery(url: URL): { dropIds: number[]; canonicalSearch: string } {
+  const dropIds = parseIdList(url, "drop_ids", DROP_ID_LIST_PARAMS, 96, parseDropId);
+  return { dropIds, canonicalSearch: `drop_ids=${dropIds.join("%2C")}` };
+}
+
+export function parseDropDetailBatchQuery(url: URL): {
+  dropIds: number[];
+  canonicalSearch: string;
+} {
+  const dropIds = parseIdList(url, "ids", ID_LIST_PARAMS, 96, parseDropId);
+  return { dropIds, canonicalSearch: `ids=${dropIds.join("%2C")}` };
+}
+
+export function parseCollectionBatchIdsQuery(url: URL): {
+  collectionIds: number[];
+  canonicalSearch: string;
+} {
+  const collectionIds = parseIdList(url, "ids", ID_LIST_PARAMS, 16, parseCollectionId);
+  return { collectionIds, canonicalSearch: `ids=${collectionIds.join("%2C")}` };
 }
 
 export function parseCollectionsQuery(url: URL, snapshotId: string): CollectionsQuery {
@@ -305,10 +410,13 @@ export function encodeCursor(
   value:
     | DropCursor
     | OwnerCursor
+    | PersonalHoldingsCursor
+    | OwnedCollectionsCursor
     | CollectionCursor
     | CollectionItemCursor
     | CollectionExportSegmentCursor
-    | MomentCursor,
+    | MomentCursor
+    | CapsuleCursor,
 ): string {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
   let binary = "";
@@ -338,6 +446,32 @@ function validateMomentCursor(
     !MOMENT_CURSOR_ID.test(cursor.i)
   ) {
     throw new ApiError(400, "Cursor does not belong to this Moments query or snapshot.");
+  }
+  return cursor;
+}
+
+function validateCapsuleCursor(
+  cursor: CapsuleCursor,
+  snapshotId: string,
+  filterKey: string,
+): CapsuleCursor {
+  if (
+    !isObject(cursor) ||
+    cursor.v !== 1 ||
+    cursor.c !== "capsules" ||
+    cursor.s !== snapshotId ||
+    cursor.f !== filterKey ||
+    !Number.isInteger(cursor.p) ||
+    cursor.p < 2 ||
+    cursor.p > 10_000 ||
+    typeof cursor.k !== "string" ||
+    cursor.k.length === 0 ||
+    cursor.k.length > 64 ||
+    /[\u0000-\u001f]/.test(cursor.k) ||
+    !Number.isSafeInteger(cursor.i) ||
+    cursor.i <= 0
+  ) {
+    throw new ApiError(400, "Cursor does not belong to this Capsule owner export or release.");
   }
   return cursor;
 }
@@ -498,6 +632,52 @@ function validateOwnerCursor(
   return cursor;
 }
 
+function validatePersonalHoldingsCursor(
+  cursor: PersonalHoldingsCursor,
+  snapshotId: string,
+  filterKey: string,
+): PersonalHoldingsCursor {
+  if (
+    !isObject(cursor) ||
+    cursor.v !== 1 ||
+    cursor.c !== "personal-holdings" ||
+    cursor.s !== snapshotId ||
+    cursor.f !== filterKey ||
+    !Number.isSafeInteger(cursor.p) ||
+    cursor.p <= 0 ||
+    !SOURCE_UID.test(cursor.u)
+  ) {
+    throw new ApiError(400, "Cursor does not belong to this holdings export or snapshot.");
+  }
+  return cursor;
+}
+
+function validateOwnedCollectionsCursor(
+  cursor: OwnedCollectionsCursor,
+  snapshotId: string,
+  filterKey: string,
+): OwnedCollectionsCursor {
+  if (
+    !isObject(cursor) ||
+    cursor.v !== 1 ||
+    cursor.c !== "owned-collections" ||
+    cursor.s !== snapshotId ||
+    cursor.f !== filterKey ||
+    !Number.isInteger(cursor.p) ||
+    cursor.p < 2 ||
+    cursor.p > 10_000 ||
+    typeof cursor.k !== "string" ||
+    cursor.k.length === 0 ||
+    cursor.k.length > 64 ||
+    /[\u0000-\u001f]/.test(cursor.k) ||
+    !Number.isSafeInteger(cursor.i) ||
+    cursor.i <= 0
+  ) {
+    throw new ApiError(400, "Cursor does not belong to this owned Collections export or snapshot.");
+  }
+  return cursor;
+}
+
 function normalizeSearch(raw: string): { text: string; ftsQuery: string } {
   const text = raw.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US");
   if (text.length === 0 || text.length > 64) {
@@ -538,12 +718,48 @@ function optionalParam(params: URLSearchParams, key: string): string | null {
 }
 
 function parseLimit(params: URLSearchParams, fallback: number): number {
+  return parseBoundedLimit(params, fallback, 48);
+}
+
+function parseBoundedLimit(params: URLSearchParams, fallback: number, maximum: number): number {
   const raw = optionalParam(params, "limit");
   if (raw === null) return fallback;
-  if (!/^\d{1,2}$/.test(raw)) throw new ApiError(400, "Limit must be an integer from 1 to 48.");
+  const digits = String(maximum).length;
+  if (!new RegExp(`^\\d{1,${digits}}$`).test(raw)) {
+    throw new ApiError(400, `Limit must be an integer from 1 to ${maximum}.`);
+  }
   const value = Number(raw);
-  if (value < 1 || value > 48) throw new ApiError(400, "Limit must be an integer from 1 to 48.");
+  if (value < 1 || value > maximum) {
+    throw new ApiError(400, `Limit must be an integer from 1 to ${maximum}.`);
+  }
   return value;
+}
+
+function parseIdList(
+  url: URL,
+  key: "drop_ids" | "ids",
+  allowed: ReadonlySet<string>,
+  maximum: number,
+  parseId: (raw: string) => number,
+): number[] {
+  assertKnownParams(url.searchParams, allowed);
+  const raw = optionalParam(url.searchParams, key);
+  if (raw === null) throw new ApiError(400, `Query parameter ${key} is required.`);
+  if (raw.length > maximum * 12) {
+    throw new ApiError(400, `Query parameter ${key} supports at most ${maximum} IDs.`);
+  }
+  const parts = raw.split(",");
+  if (parts.length > maximum) {
+    throw new ApiError(400, `Query parameter ${key} supports at most ${maximum} IDs.`);
+  }
+  const unique = new Set<number>();
+  for (const part of parts) {
+    unique.add(parseId(part));
+  }
+  if (unique.size === 0 || unique.size > maximum) {
+    throw new ApiError(400, `Query parameter ${key} supports between 1 and ${maximum} IDs.`);
+  }
+  return [...unique].sort((left, right) => left - right);
 }
 
 function parseOptionalInteger(

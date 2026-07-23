@@ -97,7 +97,7 @@ The remote `COLLECTIONS_DB` binding may point at the currently active or
 rollback database. Never run `wrangler d1 migrations apply COLLECTIONS_DB
 --remote` as part of a restore. Create a fresh snapshot-scoped Collections D1,
 bind only its exact name and UUID in a permission-restricted temporary Wrangler
-configuration, apply the three Collections migrations there, and use the
+configuration, apply all four Collections migrations there, and use the
 fail-closed staging loader. The complete reusable command sequence is in
 [Collections backup](../tools/collections-backup/README.md).
 
@@ -113,6 +113,70 @@ migration.
 Synthetic development rows live under `fixtures/`, outside the migration
 chain. `npm run db:setup:local` applies them only to the local databases. Never
 run a fixture file with `--remote`.
+
+## Collections owner index gate
+
+Personal-site export adds exact archived-owner pagination for Collections.
+Migration `migrations/collections/0004_owner_lookup.sql` creates the required
+partial owner-order index:
+
+```sql
+CREATE INDEX idx_collections_owner_recent
+  ON collections(owner_address_norm, updated_on DESC, collection_id DESC)
+  WHERE owner_address_norm IS NOT NULL;
+```
+
+The production query names this index with `INDEXED BY`. That is intentional:
+if the index is absent, the route fails instead of silently scanning the full
+Collections snapshot. It also means deployment order is mandatory.
+
+Before deploying a Worker version that exposes
+`/api/collections/owners/:address/export`:
+
+1. Target the exact candidate Collections database name and UUID through the
+   permission-restricted temporary Wrangler configuration.
+2. List pending migrations through the isolated `STAGING_COLLECTIONS_DB`
+   binding. A fresh target must show exactly `0001` through `0004`; an
+   intentionally retained verified database that already has `0001` through
+   `0003` must show only `0004_owner_lookup.sql`. Any other state requires
+   investigation.
+3. Apply the listed migration set through that same isolated binding, then list
+   again and require no pending migration:
+
+   ```bash
+   npx wrangler d1 migrations list STAGING_COLLECTIONS_DB \
+     --remote --config "$STAGING_CONFIG"
+   npx wrangler d1 migrations apply STAGING_COLLECTIONS_DB \
+     --remote --config "$STAGING_CONFIG"
+   npx wrangler d1 migrations list STAGING_COLLECTIONS_DB \
+     --remote --config "$STAGING_CONFIG"
+   ```
+
+   Do not use the active `COLLECTIONS_DB` binding as an ambiguous restore
+   target.
+
+4. Confirm `collections_meta` still identifies the intended ready snapshot and
+   that `PRAGMA integrity_check` passes.
+5. Confirm `PRAGMA index_list('collections')` contains
+   `idx_collections_owner_recent`.
+6. Run `EXPLAIN QUERY PLAN` for an exact `owner_address_norm` lookup ordered by
+   `updated_on DESC, collection_id DESC`; require the owner index and no
+   temporary sort.
+7. Exercise the owner endpoint against that database before changing or
+   deploying the public Worker binding.
+
+Do not deploy the code first. A database loaded under the previous
+three-migration schema is otherwise healthy for older routes but cannot serve
+the new owned-Collection export. Record the fourth migration and index check for
+both the activation candidate and any database intended for immediate rollback.
+
+Migration `0004` adds only the lookup index. Applying it to an otherwise
+verified database does not require another source capture, D1 data import, or R2
+publication. It also does not by itself require a new
+`COLLECTIONS_RELEASE_ID`; replacing the binding or changing published rows still
+does, under the existing release rules. The Collections backup package's three
+`d1/prepare` artifacts remain data-import artifacts, not a count of repository
+schema migrations.
 
 ## Import a staged snapshot
 
@@ -167,20 +231,52 @@ npm run deploy
 After deployment, verify at least:
 
 - the home page and static assets;
-- `/api/meta` and one page each of browse and address results;
+- `/api/meta`, one page each of browse and address results, and a 96-ID
+  `/api/drops/export/batch` boundary request whose public and unavailable
+  arrays are disjoint and jointly cover the canonical requested IDs;
 - `/api/collections`, one collection detail/items page, and each segmented
   collection export endpoint;
+- one formal held-Drop membership resolution, one batched Collection-profile
+  response, and one paginated exact-owner Collection response;
 - `/api/moments/meta`, the Moments hub, one Moment detail, one Drop album, one
-  Collection album, and one author export page;
+  Collection album, and one page each of the author, tag, and Capsule-owner
+  exports;
+- one personal export manifest and at least two cursor pages of normalized
+  Holdings, verifying on each page that the unique token Drop references are
+  partitioned exactly between public `drops` and `unavailableDropIds`, and that
+  all three snapshot IDs, both release IDs, the Moments source/build digests,
+  and authored/tagged/Capsule counts remain unchanged;
+- a browser-built personal-site ZIP: verify its manifest hashes and counts,
+  serve the extracted folder, open every Holdings, Collection, authored,
+  tagged, and Capsule view, confirm `drops` and
+  `unavailable-drop-references` jointly cover all packaged Drop references,
+  confirm `counts.unavailableDropReferences`, and confirm no remote image,
+  video, or audio request occurs before a media click;
 - an empty result and an invalid request;
 - image success and fallback behavior;
-- JSON and CSV export metadata;
+- identical ID-only output for deliberately private and missing Drop-detail
+  fixtures, without a reason or private field;
+- JSON and CSV export metadata, including the legacy 5,000-record rejection;
 - cache headers and repeated-request behavior; and
 - observability without secrets, response bodies, or unnecessary address data.
 
 Record the Worker version, Git commit, snapshot ID, Collections and Moments
-release IDs, Moments source/build digests, migration state, and smoke test
-result in the release notes.
+release IDs, Moments source/build digests, Collections migration
+`0004_owner_lookup.sql` and index evidence, migration state, and smoke test result
+in the release notes.
+
+## Deploying generated personal sites
+
+The ZIP created by an address page is a separate, pure-static artifact; it is
+not another deployment of this Worker. Its extracted root can be published
+through Cloudflare Drop, Vercel Drop, a Filebase IPFS Site, or an ICP asset
+canister. The package contains provider-specific agent prompts, but operators
+remain responsible for destination accounts, domains, retention, and current
+provider limits.
+
+Follow [Portable personal-site export](personal-site-export.md#deploying-the-generated-package)
+for the exact package boundary and deployment guidance. Do not add a Worker API,
+database, or server build step merely to host the generated site.
 
 ## Cache and rollback
 

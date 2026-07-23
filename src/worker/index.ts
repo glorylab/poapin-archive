@@ -5,9 +5,13 @@ import {
   fetchCollectionDropStats,
   fetchCollectionExportManifest,
   fetchCollectionItems,
+  fetchCollectionMemberships,
   fetchCollectionProfile,
+  fetchCollectionProfilesBatch,
   fetchCollectionSuggestions,
   fetchCollections,
+  fetchOwnedCollectionCount,
+  fetchOwnedCollectionsPage,
 } from "./collections-repository";
 import { createExportResponse, MAX_SYNC_EXPORT_RECORDS } from "./exports";
 import {
@@ -17,13 +21,18 @@ import {
   fetchMoment,
   fetchMoments,
   fetchMomentsMeta,
+  fetchOwnedCapsuleExportPage,
+  fetchPersonalMomentRelationCounts,
+  fetchTaggedMomentExportPage,
   momentsReleaseIdentity,
 } from "./moments-repository";
 import {
   fetchDrop,
+  fetchDropDetailBatch,
   fetchDrops,
   fetchMeta,
   fetchOwner,
+  fetchPersonalHoldingsPage,
   fetchOwnerTotal,
   fetchSnapshotAt,
 } from "./repository";
@@ -32,16 +41,22 @@ import {
   ApiError,
   assertNoQuery,
   normalizeAddress,
+  parseCapsuleOwnerQuery,
   parseCollectionId,
   parseCollectionExportSegmentQuery,
+  parseCollectionBatchIdsQuery,
   parseCollectionItemsQuery,
   parseCollectionsQuery,
+  parseDropIdsQuery,
   parseDropId,
+  parseDropDetailBatchQuery,
   parseDropsQuery,
   parseMomentId,
   parseMomentPageQuery,
   parseMomentsQuery,
+  parseOwnedCollectionsQuery,
   parseOwnerQuery,
+  parsePersonalHoldingsQuery,
 } from "./validation";
 
 export const app = new Hono<AppEnv>();
@@ -51,6 +66,8 @@ export const app = new Hono<AppEnv>();
 // privacy redaction while unrelated archive endpoints retain their stable key.
 const COLLECTIONS_CACHE_SCHEMA = "collections-v3";
 const MOMENTS_CACHE_SCHEMA = "moments-v2";
+const PERSONAL_EXPORT_CACHE_SCHEMA = "personal-export-v1";
+const DROP_DETAIL_BATCH_CACHE_SCHEMA = "drop-detail-batch-v1";
 
 export function collectionsApiVersion(
   bindings: Pick<Bindings, "API_CACHE_VERSION" | "COLLECTIONS_RELEASE_ID">,
@@ -90,6 +107,25 @@ export function momentsApiVersion(
     identity.sourceDatabaseSha256,
     identity.buildManifestSha256,
   ].join(".");
+}
+
+function personalExportCacheIdentity(bindings: Bindings): {
+  snapshotId: string;
+  apiVersion: string;
+} {
+  return {
+    snapshotId: [
+      bindings.SNAPSHOT_ID,
+      bindings.COLLECTIONS_SNAPSHOT_ID,
+      bindings.MOMENTS_SNAPSHOT_ID,
+    ].join("."),
+    apiVersion: [
+      bindings.API_CACHE_VERSION,
+      PERSONAL_EXPORT_CACHE_SCHEMA,
+      collectionsApiVersion(bindings),
+      momentsApiVersion(bindings),
+    ].join("."),
+  };
 }
 
 app.use("/api/*", async (context, next) => {
@@ -172,10 +208,11 @@ app.get("/api/moments/authors/:address/export", async (context) => {
   const limited = await enforceRateLimit(context.env.OWNER_RATE_LIMITER, context.req.raw);
   if (limited) return limited;
   const author = normalizeAddress(context.req.param("address"));
+  const apiVersion = momentsApiVersion(context.env);
   const query = parseMomentPageQuery(
     new URL(context.req.url),
     context.env.MOMENTS_SNAPSHOT_ID,
-    `author-export:${author}`,
+    `author-export:${author}:${apiVersion}`,
     48,
   );
   return withSnapshotCache(
@@ -184,22 +221,109 @@ app.get("/api/moments/authors/:address/export", async (context) => {
       canonicalPath: `/api/moments/authors/${author}/export`,
       canonicalSearch: query.canonicalSearch,
       snapshotId: context.env.MOMENTS_SNAPSHOT_ID,
-      apiVersion: momentsApiVersion(context.env),
+      apiVersion,
       edgeTtlSeconds: 86_400,
       browserTtlSeconds: 0,
       executionCtx: context.executionCtx,
     },
     async () => {
       const db = context.env.MOMENTS_DB.withSession("first-primary");
-      return context.json(
-        await fetchAuthorMomentExportPage(
-          db,
-          author,
-          query,
-          momentsReleaseIdentity(context.env),
-          context.env.MEDIA_BASE_URL,
-        ),
+      const release = momentsReleaseIdentity(context.env);
+      const page = await fetchAuthorMomentExportPage(
+        db,
+        author,
+        query,
+        release,
+        context.env.MEDIA_BASE_URL,
       );
+      return context.json({
+        ...page,
+        releaseId: context.env.MOMENTS_RELEASE_ID,
+        sourceDatabaseSha256: release.sourceDatabaseSha256,
+        buildManifestSha256: release.buildManifestSha256,
+      });
+    },
+  );
+});
+
+app.get("/api/moments/tags/:address/export", async (context) => {
+  const limited = await enforceRateLimit(context.env.OWNER_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const address = normalizeAddress(context.req.param("address"));
+  const apiVersion = momentsApiVersion(context.env);
+  const query = parseMomentPageQuery(
+    new URL(context.req.url),
+    context.env.MOMENTS_SNAPSHOT_ID,
+    `tagged-export:${address}:${apiVersion}`,
+    48,
+  );
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: `/api/moments/tags/${address}/export`,
+      canonicalSearch: query.canonicalSearch,
+      snapshotId: context.env.MOMENTS_SNAPSHOT_ID,
+      apiVersion,
+      edgeTtlSeconds: 86_400,
+      browserTtlSeconds: 0,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.MOMENTS_DB.withSession("first-primary");
+      const release = momentsReleaseIdentity(context.env);
+      const page = await fetchTaggedMomentExportPage(
+        db,
+        address,
+        query,
+        release,
+        context.env.MEDIA_BASE_URL,
+      );
+      return context.json({
+        ...page,
+        releaseId: context.env.MOMENTS_RELEASE_ID,
+        sourceDatabaseSha256: release.sourceDatabaseSha256,
+        buildManifestSha256: release.buildManifestSha256,
+      });
+    },
+  );
+});
+
+app.get("/api/capsules/owners/:address/export", async (context) => {
+  const limited = await enforceRateLimit(context.env.OWNER_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const apiVersion = momentsApiVersion(context.env);
+  const query = parseCapsuleOwnerQuery(
+    new URL(context.req.url),
+    context.req.param("address"),
+    context.env.MOMENTS_SNAPSHOT_ID,
+    apiVersion,
+  );
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: `/api/capsules/owners/${query.address}/export`,
+      canonicalSearch: query.canonicalSearch,
+      snapshotId: context.env.MOMENTS_SNAPSHOT_ID,
+      apiVersion,
+      edgeTtlSeconds: 86_400,
+      browserTtlSeconds: 0,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.MOMENTS_DB.withSession("first-primary");
+      const release = momentsReleaseIdentity(context.env);
+      const page = await fetchOwnedCapsuleExportPage(
+        db,
+        query,
+        release,
+        context.env.MEDIA_BASE_URL,
+      );
+      return context.json({
+        ...page,
+        releaseId: context.env.MOMENTS_RELEASE_ID,
+        sourceDatabaseSha256: release.sourceDatabaseSha256,
+        buildManifestSha256: release.buildManifestSha256,
+      });
     },
   );
 });
@@ -327,6 +451,35 @@ app.get("/api/drops", async (context) => {
   );
 });
 
+app.get("/api/drops/export/batch", async (context) => {
+  const limited = await enforceRateLimit(context.env.OWNER_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const query = parseDropDetailBatchQuery(new URL(context.req.url));
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: "/api/drops/export/batch",
+      canonicalSearch: query.canonicalSearch,
+      snapshotId: context.env.SNAPSHOT_ID,
+      apiVersion: `${context.env.API_CACHE_VERSION}.${DROP_DETAIL_BATCH_CACHE_SCHEMA}`,
+      edgeTtlSeconds: 604_800,
+      browserTtlSeconds: 60,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.CATALOG_DB.withSession("first-primary");
+      return context.json(
+        await fetchDropDetailBatch(
+          db,
+          query.dropIds,
+          context.env.MEDIA_BASE_URL,
+          context.env.SNAPSHOT_ID,
+        ),
+      );
+    },
+  );
+});
+
 app.get("/api/drops/:id", async (context) => {
   const limited = await enforceRateLimit(context.env.BROWSE_RATE_LIMITER, context.req.raw);
   if (limited) return limited;
@@ -442,7 +595,10 @@ app.get("/api/collections/:id/export", async (context) => {
         context.env.COLLECTIONS_SNAPSHOT_ID,
       );
       if (!manifest) throw collectionNotFound();
-      return context.json(manifest);
+      return context.json({
+        ...manifest,
+        releaseId: context.env.COLLECTIONS_RELEASE_ID,
+      });
     },
   );
 });
@@ -472,7 +628,12 @@ app.get("/api/collections/:id/export/metadata", async (context) => {
         context.env.MEDIA_BASE_URL,
       );
       if (!profile) throw collectionNotFound();
-      return context.json({ schemaVersion: "poapin-collection-export-v1", ...profile });
+      return context.json({
+        schemaVersion: "poapin-collection-export-v1",
+        segment: "metadata",
+        releaseId: context.env.COLLECTIONS_RELEASE_ID,
+        ...profile,
+      });
     },
   );
 });
@@ -509,6 +670,8 @@ app.get("/api/collections/:id/export/items", async (context) => {
       return context.json({
         schemaVersion: "poapin-collection-export-v1",
         snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+        releaseId: context.env.COLLECTIONS_RELEASE_ID,
+        segment: "items",
         ...page,
         nextPath: collectionExportNextPath(
           query.collectionId,
@@ -554,6 +717,8 @@ app.get("/api/collections/:id/export/artist-drops", async (context) => {
       return context.json({
         schemaVersion: "poapin-collection-export-v1",
         snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+        releaseId: context.env.COLLECTIONS_RELEASE_ID,
+        segment: "artist-drops",
         ...page,
         nextPath: collectionExportNextPath(
           query.collectionId,
@@ -599,6 +764,8 @@ app.get("/api/collections/:id/export/suggestions", async (context) => {
       return context.json({
         schemaVersion: "poapin-collection-export-v1",
         snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+        releaseId: context.env.COLLECTIONS_RELEASE_ID,
+        segment: "suggestions",
         ...page,
         nextPath: collectionExportNextPath(
           query.collectionId,
@@ -638,6 +805,8 @@ app.get("/api/collections/:id/export/drop-stats", async (context) => {
       return context.json({
         schemaVersion: "poapin-collection-export-v1",
         snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+        releaseId: context.env.COLLECTIONS_RELEASE_ID,
+        segment: "drop-stats",
         ...page,
         nextPath: collectionExportNextPath(
           query.collectionId,
@@ -645,6 +814,103 @@ app.get("/api/collections/:id/export/drop-stats", async (context) => {
           query.limit,
           page.nextCursor,
         ),
+      });
+    },
+  );
+});
+
+app.get("/api/collections/resolve", async (context) => {
+  const limited = await enforceRateLimit(context.env.OWNER_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const query = parseDropIdsQuery(new URL(context.req.url));
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: "/api/collections/resolve",
+      canonicalSearch: query.canonicalSearch,
+      snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+      apiVersion: collectionsApiVersion(context.env),
+      edgeTtlSeconds: 604_800,
+      browserTtlSeconds: 60,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.COLLECTIONS_DB.withSession("first-primary");
+      const memberships = await fetchCollectionMemberships(
+        db,
+        query.dropIds,
+        context.env.COLLECTIONS_SNAPSHOT_ID,
+        context.env.MEDIA_BASE_URL,
+      );
+      return context.json({
+        ...memberships,
+        releaseId: context.env.COLLECTIONS_RELEASE_ID,
+      });
+    },
+  );
+});
+
+app.get("/api/collections/export/batch", async (context) => {
+  const limited = await enforceRateLimit(context.env.OWNER_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const query = parseCollectionBatchIdsQuery(new URL(context.req.url));
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: "/api/collections/export/batch",
+      canonicalSearch: query.canonicalSearch,
+      snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+      apiVersion: collectionsApiVersion(context.env),
+      edgeTtlSeconds: 604_800,
+      browserTtlSeconds: 60,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.COLLECTIONS_DB.withSession("first-primary");
+      const profiles = await fetchCollectionProfilesBatch(
+        db,
+        query.collectionIds,
+        context.env.COLLECTIONS_SNAPSHOT_ID,
+        context.env.MEDIA_BASE_URL,
+      );
+      return context.json({
+        ...profiles,
+        releaseId: context.env.COLLECTIONS_RELEASE_ID,
+      });
+    },
+  );
+});
+
+app.get("/api/collections/owners/:address/export", async (context) => {
+  const limited = await enforceRateLimit(context.env.OWNER_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const query = parseOwnedCollectionsQuery(
+    new URL(context.req.url),
+    context.req.param("address"),
+    context.env.COLLECTIONS_SNAPSHOT_ID,
+  );
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: `/api/collections/owners/${query.address}/export`,
+      canonicalSearch: query.canonicalSearch,
+      snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+      apiVersion: collectionsApiVersion(context.env),
+      edgeTtlSeconds: 86_400,
+      browserTtlSeconds: 0,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.COLLECTIONS_DB.withSession("first-primary");
+      const page = await fetchOwnedCollectionsPage(
+        db,
+        query,
+        context.env.COLLECTIONS_SNAPSHOT_ID,
+        context.env.MEDIA_BASE_URL,
+      );
+      return context.json({
+        ...page,
+        releaseId: context.env.COLLECTIONS_RELEASE_ID,
       });
     },
   );
@@ -691,6 +957,123 @@ app.get("/api/collections/:id", async (context) => {
       );
       if (!items) throw collectionNotFound();
       return context.json({ ...profile, items });
+    },
+  );
+});
+
+app.get("/api/owners/:address/export/manifest", async (context) => {
+  const limited = await enforceRateLimit(context.env.OWNER_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  assertNoQuery(new URL(context.req.url));
+  const address = normalizeAddress(context.req.param("address"));
+  const cacheIdentity = personalExportCacheIdentity(context.env);
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: `/api/owners/${address}/export/manifest`,
+      snapshotId: cacheIdentity.snapshotId,
+      apiVersion: cacheIdentity.apiVersion,
+      edgeTtlSeconds: 86_400,
+      browserTtlSeconds: 0,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const holdingsDb = context.env.HOLDINGS_DB.withSession("first-primary");
+      const collectionsDb = context.env.COLLECTIONS_DB.withSession("first-primary");
+      const momentsDb = context.env.MOMENTS_DB.withSession("first-primary");
+      const [holdings, ownedCollections, momentRelations] = await Promise.all([
+        fetchOwnerTotal(holdingsDb, address, context.env.SNAPSHOT_ID),
+        fetchOwnedCollectionCount(collectionsDb, address, context.env.COLLECTIONS_SNAPSHOT_ID),
+        fetchPersonalMomentRelationCounts(momentsDb, address, momentsReleaseIdentity(context.env)),
+      ]);
+      return context.json({
+        schemaVersion: "poapin-personal-export-v1",
+        address,
+        snapshots: {
+          holdings: context.env.SNAPSHOT_ID,
+          collections: context.env.COLLECTIONS_SNAPSHOT_ID,
+          moments: context.env.MOMENTS_SNAPSHOT_ID,
+        },
+        sources: {
+          holdings: {
+            snapshotId: context.env.SNAPSHOT_ID,
+          },
+          collections: {
+            snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+            releaseId: context.env.COLLECTIONS_RELEASE_ID,
+          },
+          moments: {
+            snapshotId: context.env.MOMENTS_SNAPSHOT_ID,
+            releaseId: context.env.MOMENTS_RELEASE_ID,
+            sourceDatabaseSha256: context.env.MOMENTS_SOURCE_DATABASE_SHA256,
+            buildManifestSha256: context.env.MOMENTS_BUILD_MANIFEST_SHA256,
+          },
+        },
+        counts: {
+          holdings,
+          authoredMoments: momentRelations.authoredMoments,
+          taggedMoments: momentRelations.taggedMoments,
+          ownedCollections,
+          ownedCapsules: momentRelations.ownedCapsules,
+        },
+        segments: {
+          holdings: {
+            path: `/api/owners/${address}/export/holdings?limit=480`,
+            pageSize: 480,
+          },
+          ownedCollections: {
+            path: `/api/collections/owners/${address}/export?limit=48`,
+            pageSize: 48,
+          },
+          moments: {
+            path: `/api/moments/authors/${address}/export?limit=48`,
+            pageSize: 48,
+          },
+          taggedMoments: {
+            path: `/api/moments/tags/${address}/export?limit=48`,
+            pageSize: 48,
+          },
+          ownedCapsules: {
+            path: `/api/capsules/owners/${address}/export?limit=48`,
+            pageSize: 48,
+          },
+        },
+      });
+    },
+  );
+});
+
+app.get("/api/owners/:address/export/holdings", async (context) => {
+  const limited = await enforceRateLimit(context.env.OWNER_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const query = parsePersonalHoldingsQuery(
+    new URL(context.req.url),
+    context.req.param("address"),
+    context.env.SNAPSHOT_ID,
+  );
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: `/api/owners/${query.address}/export/holdings`,
+      canonicalSearch: query.canonicalSearch,
+      snapshotId: context.env.SNAPSHOT_ID,
+      apiVersion: `${context.env.API_CACHE_VERSION}.${PERSONAL_EXPORT_CACHE_SCHEMA}.holdings`,
+      edgeTtlSeconds: 86_400,
+      browserTtlSeconds: 0,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const holdingsDb = context.env.HOLDINGS_DB.withSession("first-primary");
+      const catalogDb = context.env.CATALOG_DB.withSession("first-primary");
+      return context.json(
+        await fetchPersonalHoldingsPage(
+          holdingsDb,
+          catalogDb,
+          query,
+          context.env.SNAPSHOT_ID,
+          context.env.MEDIA_BASE_URL,
+        ),
+      );
     },
   );
 });
