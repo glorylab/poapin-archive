@@ -13,7 +13,8 @@ INSERT INTO moments_meta (key, value) VALUES
   ('source_moments_count', '8'),
   ('public_moments_count', '3'),
   ('media_count', '5'),
-  ('capsules_count', '3');
+  ('capsules_count', '3'),
+  ('public_capsules_count', '2');
 
 -- Production builds write this immutable plan before source-derived rows. The
 -- synthetic fixture follows the same contract so import guards remain active
@@ -449,7 +450,7 @@ INSERT INTO import_shards (
   'fixture/moments-meta.sql',
   'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
   'moments_meta',
-  10,
+  11,
   1
 );
 

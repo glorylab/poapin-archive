@@ -51,6 +51,12 @@ const READINESS_SQL = `
   WHERE key IN ('snapshot_id', 'ready')
   LIMIT 2`;
 
+const META_SQL = `
+  SELECT key, value
+  FROM collections_meta
+  WHERE key IN ('snapshot_id', 'snapshot_at', 'ready', 'collections_count')
+  LIMIT 4`;
+
 const COLLECTION_SUMMARY_COLUMNS = `
   c.collection_id,
   c.slug,
@@ -206,6 +212,13 @@ interface MetaRow {
   value: string;
 }
 
+export interface CollectionsMeta {
+  snapshotId: string;
+  releaseId: string;
+  snapshotAt: string;
+  count: number;
+}
+
 interface CollectionCountRow {
   item_count: number;
 }
@@ -309,6 +322,26 @@ export async function fetchCollectionsReadiness(
   const result = await db.prepare(READINESS_SQL).all<MetaRow>();
   assertCollectionsReadiness(result.results, snapshotId);
   return { snapshotId, ready: true };
+}
+
+export async function fetchCollectionsMeta(
+  db: D1ReadClient,
+  snapshotId: string,
+  releaseId: string,
+): Promise<CollectionsMeta> {
+  const result = await db.prepare(META_SQL).all<MetaRow>();
+  assertCollectionsReadiness(result.results, snapshotId);
+  const meta = new Map(result.results.map((row) => [row.key, row.value]));
+  const snapshotAt = meta.get("snapshot_at");
+  if (!snapshotAt) {
+    throw new ApiError(503, "Collections metadata is not available.", "collections_unavailable");
+  }
+  return {
+    snapshotId,
+    releaseId,
+    snapshotAt,
+    count: storedCollectionCount(meta.get("collections_count")),
+  };
 }
 
 export async function fetchCollections(
@@ -1698,6 +1731,25 @@ function toCollectionType(value: string | null): Exclude<CollectionType, "all"> 
 
 function numberValue(value: number | null | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function storedCollectionCount(value: string | undefined): number {
+  if (!value || !/^\d+$/.test(value)) {
+    throw new ApiError(
+      503,
+      "Collections metadata contains an invalid count.",
+      "collections_unavailable",
+    );
+  }
+  const count = Number(value);
+  if (!Number.isSafeInteger(count)) {
+    throw new ApiError(
+      503,
+      "Collections metadata count is outside the supported range.",
+      "collections_unavailable",
+    );
+  }
+  return count;
 }
 
 function nullableNumber(value: number | null | undefined): number | null {

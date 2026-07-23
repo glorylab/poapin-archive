@@ -1,8 +1,8 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { getDrops } from "../api";
+import { ApiError, getCollectionsMeta, getDrops, getMomentsMeta, resolveAddressName } from "../api";
 import { DropCard } from "../components/DropCard";
 import { EmptyState, ErrorState, GridSkeleton } from "../components/States";
-import { ArrowIcon, DownloadIcon, SearchIcon } from "../icons";
+import { ArrowIcon, SearchIcon } from "../icons";
 import { navigate } from "../router";
 import type { ArchiveMeta, Drop, DropSort, EventType } from "../types";
 import { isAbortError } from "../utils";
@@ -27,7 +27,11 @@ export function BrowsePage({ meta }: BrowsePageProps) {
   const [retry, setRetry] = useState(0);
   const [address, setAddress] = useState("");
   const [addressError, setAddressError] = useState("");
+  const [resolvingAddress, setResolvingAddress] = useState(false);
+  const [collectionCount, setCollectionCount] = useState<number>();
+  const [momentCount, setMomentCount] = useState<number>();
   const loadMoreController = useRef<AbortController | null>(null);
+  const addressController = useRef<AbortController | null>(null);
   const debouncedQuery = useDebouncedValue(query.trim(), 320);
   const queryTooShort = debouncedQuery.length === 1;
 
@@ -44,7 +48,28 @@ export function BrowsePage({ meta }: BrowsePageProps) {
     return () => window.removeEventListener("popstate", syncFromHistory);
   }, []);
 
-  useEffect(() => () => loadMoreController.current?.abort(), []);
+  useEffect(
+    () => () => {
+      loadMoreController.current?.abort();
+      addressController.current?.abort();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getCollectionsMeta(controller.signal)
+      .then((response) => setCollectionCount(response.count))
+      .catch((cause: unknown) => {
+        if (!isAbortError(cause)) setCollectionCount(undefined);
+      });
+    getMomentsMeta(controller.signal)
+      .then((response) => setMomentCount(response.counts.publicMoments))
+      .catch((cause: unknown) => {
+        if (!isAbortError(cause)) setMomentCount(undefined);
+      });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -120,35 +145,133 @@ export function BrowsePage({ meta }: BrowsePageProps) {
     }
   };
 
-  const openAddress = (event: FormEvent) => {
+  const openAddress = async (event: FormEvent) => {
     event.preventDefault();
-    const normalized = address.trim().toLowerCase();
-    if (!ADDRESS_PATTERN.test(normalized)) {
-      setAddressError("Enter a complete 0x Ethereum address. ENS support can be added later.");
+    if (resolvingAddress) return;
+    const value = address.trim();
+    const normalized = value.toLowerCase();
+    if (ADDRESS_PATTERN.test(normalized)) {
+      setAddressError("");
+      navigate(`/address/${normalized}`);
       return;
     }
+
+    if (!value || value.toLowerCase().startsWith("0x") || !value.includes(".")) {
+      setAddressError("Enter a complete 0x address or an ENS name such as name.eth.");
+      return;
+    }
+
+    const controller = new AbortController();
+    addressController.current?.abort();
+    addressController.current = controller;
+    setResolvingAddress(true);
     setAddressError("");
-    navigate(`/address/${normalized}`);
+    try {
+      const response = await resolveAddressName(value, controller.signal);
+      if (controller.signal.aborted) return;
+      navigate(`/address/${response.address.toLowerCase()}`);
+    } catch (cause) {
+      if (isAbortError(cause)) return;
+      if (cause instanceof ApiError && cause.status === 404) {
+        setAddressError("No Ethereum address was found for that ENS name.");
+      } else if (cause instanceof ApiError && cause.status === 400) {
+        setAddressError("Enter a valid ENS name, such as name.eth.");
+      } else {
+        setAddressError("ENS lookup is temporarily unavailable. A 0x address still works.");
+      }
+    } finally {
+      if (addressController.current === controller) {
+        addressController.current = null;
+        setResolvingAddress(false);
+      }
+    }
   };
 
   return (
     <main id="main-content" tabIndex={-1}>
-      <section className="hero shell">
+      <section className="hero shell" id="address" tabIndex={-1}>
         <div className="hero__copy">
           <span className="eyebrow">An open snapshot of POAP</span>
           <h1>
-            Every POAP has a story.
+            Find the POAPs you kept.
             <br />
-            <em>Keep them browsable.</em>
+            <em>Keep the story.</em>
           </h1>
           <p>
-            Explore preserved POAP drops and export the public collection held by any exact address
-            at the archive snapshot.
+            Look up a public address or ENS name to browse its preserved collection, then take the
+            full archive with you.
           </p>
         </div>
 
-        <div className="hero__search glass-panel">
-          <label htmlFor="archive-search">Search the archive</label>
+        <form
+          className="hero__lookup glass-panel"
+          onSubmit={openAddress}
+          noValidate
+          aria-busy={resolvingAddress}
+        >
+          <label htmlFor="address-lookup">Look up a collection</label>
+          <div className={addressError ? "lookup-input has-error" : "lookup-input"}>
+            <SearchIcon aria-hidden="true" />
+            <input
+              id="address-lookup"
+              type="text"
+              value={address}
+              onChange={(event) => {
+                addressController.current?.abort();
+                addressController.current = null;
+                setResolvingAddress(false);
+                setAddress(event.target.value);
+                if (addressError) setAddressError("");
+              }}
+              placeholder="0x address or name.eth"
+              maxLength={255}
+              autoComplete="off"
+              spellCheck={false}
+              autoCapitalize="none"
+              autoCorrect="off"
+              aria-invalid={addressError ? "true" : undefined}
+              aria-describedby={addressError ? "address-error" : "address-help"}
+            />
+            <button className="button button--gold" type="submit" disabled={resolvingAddress}>
+              {resolvingAddress ? "Resolving…" : "View collection"}
+              <ArrowIcon />
+            </button>
+          </div>
+          <span className="search-hint" id="address-help">
+            No wallet connection; your browser never contacts an RPC provider.
+          </span>
+          {addressError ? (
+            <span className="lookup-error" id="address-error" role="alert">
+              {addressError}
+            </span>
+          ) : null}
+        </form>
+      </section>
+
+      <section className="stats shell" aria-label="Archive statistics">
+        <Stat value={meta?.counts.drops} label="drops" />
+        <Stat value={collectionCount} label="collections" />
+        <Stat value={momentCount} label="public moments" />
+        <Stat value={meta?.counts.tokens} label="POAPs held" />
+        <Stat value={meta?.counts.owners} label="addresses" />
+        <Stat value={meta?.counts.artworks} label="artworks" />
+      </section>
+
+      <section className="archive-section shell" aria-labelledby="archive-heading">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">The collection</span>
+            <h2 id="archive-heading">
+              {debouncedQuery ? `Results for “${debouncedQuery}”` : "Browse preserved drops"}
+            </h2>
+          </div>
+          <span className="result-count" aria-live="polite">
+            {loading ? "Loading…" : `${items.length}${cursor ? "+" : ""} shown`}
+          </span>
+        </div>
+
+        <div className="archive-search glass-panel">
+          <label htmlFor="archive-search">Search drops</label>
           <div className="search-input">
             <SearchIcon />
             <input
@@ -168,28 +291,7 @@ export function BrowsePage({ meta }: BrowsePageProps) {
             ) : null}
           </div>
           <span className="search-hint" id="archive-search-hint">
-            Use at least two characters. Searches are served from the preserved July 2026 snapshot.
-          </span>
-        </div>
-      </section>
-
-      <section className="stats shell" aria-label="Archive statistics">
-        <Stat value={meta?.counts.drops} label="drops" />
-        <Stat value={meta?.counts.tokens} label="POAPs held" />
-        <Stat value={meta?.counts.owners} label="addresses" />
-        <Stat value={meta?.counts.artworks} label="artworks" />
-      </section>
-
-      <section className="archive-section shell" aria-labelledby="archive-heading">
-        <div className="section-heading">
-          <div>
-            <span className="eyebrow">The collection</span>
-            <h2 id="archive-heading">
-              {debouncedQuery ? `Results for “${debouncedQuery}”` : "Browse preserved drops"}
-            </h2>
-          </div>
-          <span className="result-count" aria-live="polite">
-            {loading ? "Loading…" : `${items.length}${cursor ? "+" : ""} shown`}
+            Use at least two characters. Results come from the preserved snapshot.
           </span>
         </div>
 
@@ -274,48 +376,6 @@ export function BrowsePage({ meta }: BrowsePageProps) {
             </button>
           </div>
         ) : null}
-      </section>
-
-      <section className="export-callout shell" id="address" tabIndex={-1}>
-        <div className="export-callout__content">
-          <span className="eyebrow">Portable by design</span>
-          <h2>Export an address’s POAPs</h2>
-          <p>
-            Enter an exact public address to browse and download its holdings as CSV or JSON. No
-            wallet connection or tracking.
-          </p>
-        </div>
-        <form className="address-form" onSubmit={openAddress} noValidate>
-          <div className={addressError ? "address-form__field has-error" : "address-form__field"}>
-            <input
-              aria-label="Ethereum address"
-              value={address}
-              onChange={(event) => {
-                setAddress(event.target.value);
-                if (addressError) setAddressError("");
-              }}
-              placeholder="0x…"
-              type="text"
-              spellCheck={false}
-              autoCapitalize="none"
-              autoCorrect="off"
-              aria-invalid={addressError ? "true" : undefined}
-              aria-describedby={addressError ? "address-error" : "address-help"}
-            />
-            <button className="button button--gold" type="submit">
-              <DownloadIcon />
-              View & export
-            </button>
-          </div>
-          <span className="sr-only" id="address-help">
-            Enter a complete public Ethereum address beginning with 0x.
-          </span>
-          {addressError ? (
-            <span className="field-error" id="address-error" role="alert">
-              {addressError}
-            </span>
-          ) : null}
-        </form>
       </section>
     </main>
   );

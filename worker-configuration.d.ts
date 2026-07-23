@@ -19,6 +19,7 @@ interface __BaseEnv_Env {
 	MOMENTS_BUILD_MANIFEST_SHA256: "21ef4c8ef6351b59a92210cd0ba4631c5e9ef9034ec0dd5b0ddf9ac3dd702bf3";
 	API_CACHE_VERSION: "v1";
 	MEDIA_BASE_URL: "https://media.poap.in";
+	ETHEREUM_RPC_URL: "https://ethereum-rpc.publicnode.com";
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
@@ -31,7 +32,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "SNAPSHOT_ID" | "COLLECTIONS_SNAPSHOT_ID" | "COLLECTIONS_RELEASE_ID" | "MOMENTS_SNAPSHOT_ID" | "MOMENTS_RELEASE_ID" | "MOMENTS_SOURCE_DATABASE_SHA256" | "MOMENTS_BUILD_MANIFEST_SHA256" | "API_CACHE_VERSION" | "MEDIA_BASE_URL">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "SNAPSHOT_ID" | "COLLECTIONS_SNAPSHOT_ID" | "COLLECTIONS_RELEASE_ID" | "MOMENTS_SNAPSHOT_ID" | "MOMENTS_RELEASE_ID" | "MOMENTS_SOURCE_DATABASE_SHA256" | "MOMENTS_BUILD_MANIFEST_SHA256" | "API_CACHE_VERSION" | "MEDIA_BASE_URL" | "ETHEREUM_RPC_URL">> {}
 }
 
 // Begin runtime types

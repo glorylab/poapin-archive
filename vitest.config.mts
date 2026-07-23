@@ -30,6 +30,7 @@ export default defineWorkersConfig({
             MOMENTS_RELEASE_ID: "moments-test-release",
             MOMENTS_SOURCE_DATABASE_SHA256: "a".repeat(64),
             MOMENTS_BUILD_MANIFEST_SHA256: "b".repeat(64),
+            ETHEREUM_RPC_URL: "https://ethereum-rpc.publicnode.com",
           },
         },
         wrangler: { configPath: "./wrangler.jsonc" },

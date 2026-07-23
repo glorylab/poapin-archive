@@ -247,11 +247,16 @@ describe("portable personal site generator", () => {
     expect(html).toContain('href="https://poap.in"');
     expect(html).toContain('href="https://github.com/glorylab/poapin-archive"');
     const javascript = file(build, "assets/site.js");
-    expect(javascript).toContain('metric("Authored moments", counts.publicAuthoredMoments)');
-    expect(javascript).toContain('metric("Tagged moments", counts.publicTaggedMoments)');
-    expect(javascript).toContain('metric("Public capsules", counts.ownedCapsules)');
     expect(javascript).toContain(
-      'metric("Unavailable Drop details", counts.unavailableDropReferences)',
+      'metric("Owned Collections at snapshot", counts.ownedCollections)',
+    );
+    expect(javascript).toContain('metric("Public authored Moments", counts.publicAuthoredMoments)');
+    expect(javascript).toContain('metric("Public tagged Moments", counts.publicTaggedMoments)');
+    expect(javascript).toContain(
+      'metric("Public Capsules owned at snapshot", counts.ownedCapsules)',
+    );
+    expect(javascript).toContain(
+      'metric("Unavailable public Drop details", counts.unavailableDropReferences)',
     );
     expect(javascript).toContain('momentAssociationCard(item, "Authored")');
     expect(javascript).toContain('momentAssociationCard(item, "Tagged")');
@@ -284,6 +289,29 @@ describe("portable personal site generator", () => {
     const datasetOffset = javascript.indexOf("async function loadChunk");
     expect(javascript.indexOf("fetch(manifestUrl")).toBeLessThan(routeOffset);
     expect(datasetOffset).toBeGreaterThan(routeOffset);
+  });
+
+  it("opens on artwork-first holdings grouped by UTC mint month", async () => {
+    const build = await buildPortableSiteBundle(fixture());
+    const html = file(build, "index.html");
+    const javascript = file(build, "assets/site.js");
+    const css = file(build, "assets/site.css");
+
+    expect(html.indexOf('data-tab="poaps"')).toBeLessThan(html.indexOf('data-tab="overview"'));
+    expect(javascript).toContain('location.hash || "#poaps"');
+    expect(javascript).toContain("function groupHoldingsByMonth(items, dropsById)");
+    expect(javascript).toContain('const dropsById = tab === "poaps" ? await loadDropLookup()');
+    expect(javascript).toContain("dropsById.get(item.dropId)");
+    expect(javascript).toContain('"Load artwork for " + title');
+    expect(javascript).toContain(
+      "return withArchiveFields(card, { holding: item, drop: drop || null })",
+    );
+    expect(javascript).toContain('label: "Minted in " + new Intl.DateTimeFormat("en", {');
+    expect(javascript).toContain('timeZone: "UTC"');
+    expect(javascript).toContain('label: "Mint date unavailable"');
+    expect(javascript).toContain("return right.key.localeCompare(left.key)");
+    expect(javascript).toContain('if (left.key === "unknown") return 1');
+    expect(css).toContain(".media-action--artwork");
   });
 
   it("splits large datasets below 4 MiB without losing records or order", async () => {

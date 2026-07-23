@@ -16,6 +16,7 @@ export interface Bindings {
   MOMENTS_BUILD_MANIFEST_SHA256: string;
   API_CACHE_VERSION: string;
   MEDIA_BASE_URL: string;
+  ETHEREUM_RPC_URL: string;
 }
 
 export interface AppEnv {

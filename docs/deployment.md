@@ -68,6 +68,48 @@ media domain before publishing `MEDIA_BASE_URL`. Keep the bucket's public
 `r2.dev` development URL disabled so artwork is exposed only through the
 reviewed custom domain.
 
+## Configure ENS resolution
+
+The homepage accepts complete `0x` addresses directly and ENS names such as
+`name.eth`. ENS names are sent to `/api/resolve-address`; the Worker resolves
+them on Ethereum mainnet through the Universal Resolver using
+`ETHEREUM_RPC_URL`. The browser never receives the RPC URL or calls the provider
+directly, and no provider API key is required by the checked-in production
+configuration.
+
+CCIP-Read is disabled so a resolver-controlled record cannot send the Worker to
+arbitrary offchain gateways. Names that require that fallback fail closed; the
+ordinary onchain `.eth` path remains available.
+
+Glory Lab currently configures PublicNode's keyless public Ethereum endpoint:
+
+```json
+{
+  "vars": {
+    "ETHEREUM_RPC_URL": "https://ethereum-rpc.publicnode.com"
+  }
+}
+```
+
+Forks may replace it with any HTTPS Ethereum mainnet JSON-RPC endpoint. Keep the
+setting server-side; never add an RPC URL or provider credential to browser
+code. If a replacement endpoint requires a credential, remove the checked-in
+value and provide `ETHEREUM_RPC_URL` through the deployment environment or
+Cloudflare secret store rather than committing it.
+
+Resolved names are cached at the edge for seven days. An expected unresolved
+name is cached at the edge for five minutes, while validation failures and
+transient provider errors are not cached. These bounded, snapshot-independent
+TTLs reduce repeated RPC calls without treating mutable ENS records as archive
+data.
+
+PublicNode is convenient for a keyless default but does not provide this
+deployment with a project-specific SLA. An operator that needs dedicated
+quotas, observability, or support can point the same variable at another
+provider. [Cloudflare Ethereum Gateway](https://developers.cloudflare.com/web3/ethereum-gateway/)
+is one compatible option that can be configured later; review its current
+pricing and limits before switching.
+
 ## Generate binding types
 
 After any binding change:
@@ -231,6 +273,9 @@ npm run deploy
 After deployment, verify at least:
 
 - the home page and static assets;
+- direct `0x` lookup plus a resolving and an unresolved ENS name, including the
+  seven-day positive and five-minute negative edge-cache behavior of
+  `/api/resolve-address`;
 - `/api/meta`, one page each of browse and address results, and a 96-ID
   `/api/drops/export/batch` boundary request whose public and unavailable
   arrays are disjoint and jointly cover the canonical requested IDs;

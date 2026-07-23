@@ -9,7 +9,7 @@ export function buildIndexHtml(): string {
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="dark">
+    <meta name="color-scheme" content="light">
     <meta name="robots" content="noindex,nofollow">
     <meta name="referrer" content="no-referrer">
     <meta name="description" content="A portable personal POAP archive.">
@@ -20,7 +20,7 @@ export function buildIndexHtml(): string {
   <body>
     <div class="page-shell">
       <header class="site-header">
-        <a class="wordmark" href="#overview" aria-label="Personal POAP archive home">
+        <a class="wordmark" href="#poaps" aria-label="Personal POAP archive home">
           <span class="wordmark__mark" aria-hidden="true">P</span>
           <span>Personal POAP archive</span>
         </a>
@@ -32,18 +32,22 @@ export function buildIndexHtml(): string {
 
       <main>
         <section class="hero" aria-labelledby="site-title">
-          <p class="eyebrow">A portable history</p>
-          <h1 id="site-title">POAPs, collections, and moments—kept together.</h1>
-          <p class="hero__address" id="owner-address">Reading the archive manifest…</p>
+          <p class="eyebrow">Personal archive</p>
+          <h1 id="site-title">A history, kept together.</h1>
+          <div class="hero__identity">
+            <span>Public collection snapshot</span>
+            <code id="owner-address">Reading the archive manifest…</code>
+          </div>
           <p class="hero__copy">
-            This is a self-contained structured-data snapshot. The page has no account
-            connection, analytics, or remote database; archived media remains click-to-load.
+            Browse the held POAPs first, then explore their preserved Collections and Moments.
+            This read-only site has no account connection or analytics, and media loads only
+            when requested.
           </p>
         </section>
 
         <nav class="tabs" aria-label="Archive sections">
-          <a href="#overview" data-tab="overview">Overview</a>
           <a href="#poaps" data-tab="poaps">POAPs</a>
+          <a href="#overview" data-tab="overview">Overview</a>
           <a href="#collections" data-tab="collections">Collections</a>
           <a href="#owned" data-tab="owned">Historically owned</a>
           <a href="#moments" data-tab="moments">Moments</a>
@@ -66,27 +70,31 @@ export function buildIndexHtml(): string {
 
 export function buildSiteCss(): string {
   return `:root {
-  color: #f6f1e8;
-  background: #0c0b0f;
+  color: #274552;
+  background: #edf5f3;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
-  --ink: #f6f1e8;
-  --muted: #aaa3b3;
-  --line: rgba(246, 241, 232, 0.13);
-  --panel: rgba(31, 28, 36, 0.82);
-  --gold: #e7bb65;
-  --violet: #9f8cff;
+  --ink: #274552;
+  --deep: #1d3943;
+  --muted: #526e77;
+  --line: rgba(39, 69, 82, 0.14);
+  --panel: rgba(255, 255, 255, 0.76);
+  --panel-strong: rgba(255, 255, 255, 0.92);
+  --gold: #806b0f;
+  --gold-pale: #f4f2c8;
+  --violet: #5c5aa0;
+  --cyan: #4fafc1;
 }
 
 * { box-sizing: border-box; }
-html { min-width: 300px; background: #0c0b0f; scroll-behavior: smooth; }
+html { min-width: 300px; background: #edf5f3; scroll-behavior: smooth; }
 body {
   min-height: 100vh;
   margin: 0;
   background:
-    radial-gradient(circle at 12% 8%, rgba(104, 79, 172, 0.22), transparent 32rem),
-    radial-gradient(circle at 88% 16%, rgba(231, 187, 101, 0.12), transparent 28rem),
-    linear-gradient(180deg, #121016 0%, #0c0b0f 70%);
+    radial-gradient(circle at 12% 5%, rgba(79, 175, 193, 0.16), transparent 30rem),
+    radial-gradient(circle at 88% 14%, rgba(224, 199, 47, 0.12), transparent 24rem),
+    linear-gradient(180deg, #f3f8f5 0%, #e8f1ef 72%, #edf5f3 100%);
 }
 a { color: inherit; text-underline-offset: 0.22em; }
 button { font: inherit; }
@@ -96,54 +104,65 @@ button { font: inherit; }
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  min-height: 76px;
+  min-height: 70px;
   border-bottom: 1px solid var(--line);
 }
-.wordmark { display: inline-flex; align-items: center; gap: 11px; text-decoration: none; font-weight: 720; }
+.wordmark { display: inline-flex; align-items: center; gap: 10px; color: var(--deep); text-decoration: none; font-weight: 760; }
 .wordmark__mark {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   place-items: center;
-  border: 1px solid rgba(231, 187, 101, 0.55);
+  border: 1px solid rgba(92, 90, 160, 0.38);
   border-radius: 50%;
-  color: var(--gold);
+  color: var(--violet);
+  background: rgba(255, 255, 255, 0.48);
   font-family: Georgia, serif;
 }
 .source-links { display: flex; flex-wrap: wrap; gap: 18px; color: var(--muted); font-size: 0.88rem; }
-.source-links a:hover, footer a:hover { color: var(--ink); }
-.hero { max-width: 870px; padding: clamp(58px, 9vw, 112px) 0 56px; }
+.source-links a:hover, footer a:hover { color: var(--violet); }
+.hero { max-width: 760px; padding: clamp(40px, 6vw, 66px) 0 38px; }
 .eyebrow {
-  margin: 0 0 18px;
+  margin: 0 0 12px;
   color: var(--gold);
-  font-size: 0.75rem;
-  font-weight: 760;
+  font-size: 0.7rem;
+  font-weight: 800;
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 h1 {
-  max-width: 820px;
+  max-width: 700px;
   margin: 0;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(2.6rem, 7vw, 6.35rem);
+  font-size: clamp(2.15rem, 4.5vw, 3.8rem);
   font-weight: 400;
-  letter-spacing: -0.055em;
-  line-height: 0.96;
+  letter-spacing: -0.045em;
+  line-height: 1.02;
 }
-.hero__address {
-  width: fit-content;
+.hero__identity {
+  display: flex;
   max-width: 100%;
-  margin: 34px 0 0;
-  padding: 8px 12px;
-  overflow-wrap: anywhere;
+  width: fit-content;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 18px 0 0;
+  padding: 7px 11px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  color: #d8d1df;
-  background: rgba(255, 255, 255, 0.035);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.78rem;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.5);
+  gap: 7px 10px;
+  font-size: 0.68rem;
 }
-.hero__copy { max-width: 620px; margin: 22px 0 0; color: var(--muted); font-size: 1.03rem; line-height: 1.65; }
+.hero__identity span { font-weight: 760; letter-spacing: 0.04em; text-transform: uppercase; }
+.hero__identity code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--violet);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem;
+}
+.hero__copy { max-width: 630px; margin: 17px 0 0; color: var(--muted); font-size: 0.94rem; line-height: 1.62; }
 .tabs {
   position: sticky;
   z-index: 5;
@@ -154,7 +173,7 @@ h1 {
   padding: 11px 0;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
-  background: rgba(12, 11, 15, 0.92);
+  background: rgba(237, 245, 243, 0.9);
   backdrop-filter: blur(18px);
 }
 .tabs a {
@@ -165,11 +184,11 @@ h1 {
   font-size: 0.86rem;
   text-decoration: none;
 }
-.tabs a[aria-current="page"] { color: #17131c; background: var(--gold); }
-.view { min-height: 440px; padding: 42px 0 84px; }
+.tabs a[aria-current="page"] { color: #fff; background: var(--violet); }
+.view { min-height: 440px; padding: 38px 0 76px; }
 .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
-.section-heading h2 { margin: 0; font-family: Georgia, serif; font-size: clamp(2rem, 4vw, 3.6rem); font-weight: 400; }
-.section-heading p { margin: 0; color: var(--muted); }
+.section-heading h2 { margin: 0; color: var(--deep); font-family: Georgia, serif; font-size: clamp(1.8rem, 3vw, 2.8rem); font-weight: 400; }
+.section-heading p { max-width: 560px; margin: 0; color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
 .summary-grid, .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
@@ -179,38 +198,94 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 18px;
   background: var(--panel);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 16px 42px rgba(28, 72, 82, 0.08);
 }
-.metric { min-height: 148px; padding: 22px; }
-.metric span { display: block; color: var(--muted); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; }
-.metric strong { display: block; margin-top: 22px; font-family: Georgia, serif; font-size: 2.5rem; font-weight: 400; }
+.metric { min-height: 112px; padding: 19px; }
+.metric span { display: block; color: var(--muted); font-size: 0.69rem; font-weight: 760; letter-spacing: 0.07em; text-transform: uppercase; }
+.metric strong { display: block; margin-top: 16px; color: var(--deep); font-family: Georgia, serif; font-size: 2rem; font-weight: 400; }
+.overview-note {
+  max-width: 820px;
+  margin: 18px 0 0;
+  border-left: 3px solid var(--gold);
+  padding: 8px 12px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+.overview-context { margin-top: 40px; }
+.overview-context h3 {
+  margin: 0 0 14px;
+  color: var(--deep);
+  font-family: Georgia, serif;
+  font-size: 1.25rem;
+  font-weight: 400;
+}
+.summary-grid--secondary { grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
+.summary-grid--secondary .metric { min-height: 98px; background: rgba(255, 255, 255, 0.52); }
+.summary-grid--secondary .metric strong { font-size: 1.65rem; }
 .card { min-width: 0; padding: 18px; }
-.card h3 { margin: 0; font-family: Georgia, serif; font-size: 1.35rem; font-weight: 400; line-height: 1.15; }
+.card h3 { margin: 0; color: var(--deep); font-family: Georgia, serif; font-size: 1.35rem; font-weight: 400; line-height: 1.15; }
 .card p { color: var(--muted); line-height: 1.5; }
-.card a { overflow-wrap: anywhere; color: #d8ceff; }
+.card a { overflow-wrap: anywhere; color: var(--violet); }
 .card__meta { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
-.pill { padding: 5px 8px; border: 1px solid var(--line); border-radius: 999px; color: #c8c0cf; font-size: 0.72rem; }
+.pill { padding: 5px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 0.72rem; }
 .record-details { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
-.record-details summary { color: var(--gold); cursor: pointer; font-size: 0.76rem; }
+.record-details summary { color: var(--violet); cursor: pointer; font-size: 0.76rem; }
 .record-details pre {
   max-height: 320px;
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  color: #c8c0cf;
+  color: var(--muted);
   font: 0.7rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 .media-action {
   width: 100%;
   margin-top: 16px;
   padding: 10px 12px;
-  border: 1px solid rgba(159, 140, 255, 0.4);
+  border: 1px solid rgba(92, 90, 160, 0.3);
   border-radius: 10px;
-  color: #ddd6ff;
-  background: rgba(159, 140, 255, 0.09);
+  color: var(--violet);
+  background: rgba(92, 90, 160, 0.07);
   cursor: pointer;
 }
-.media-action:hover { background: rgba(159, 140, 255, 0.17); }
+.media-action:hover { background: rgba(92, 90, 160, 0.14); }
+.media-action--artwork {
+  display: grid;
+  min-height: 188px;
+  place-items: center;
+  margin: 0 0 16px;
+  border-color: rgba(92, 90, 160, 0.2);
+  border-radius: 14px;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 30% 24%, rgba(79, 175, 193, 0.17), transparent 45%),
+    linear-gradient(145deg, rgba(92, 90, 160, 0.08), rgba(255, 255, 255, 0.52));
+  font-weight: 720;
+}
+.media-action--artwork:hover {
+  background:
+    radial-gradient(circle at 30% 24%, rgba(79, 175, 193, 0.23), transparent 45%),
+    linear-gradient(145deg, rgba(92, 90, 160, 0.13), rgba(255, 255, 255, 0.66));
+}
+.poap-card__artwork-unavailable {
+  display: grid;
+  min-height: 188px;
+  place-items: center;
+  margin: 0 0 16px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.32);
+  font-size: 0.78rem;
+}
+.poap-card__source {
+  margin: 12px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.67rem;
+}
 .dataset-toolbar, .dataset-pager {
   display: flex;
   flex-wrap: wrap;
@@ -225,29 +300,62 @@ h1 {
   border-radius: 10px;
   padding: 0 12px;
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--panel-strong);
 }
 .dataset-toolbar input { flex: 1 1 240px; }
 .dataset-pager input { width: 82px; }
 .dataset-control {
   min-height: 42px;
   padding: 0 15px;
-  border: 1px solid rgba(231, 187, 101, 0.42);
+  border: 1px solid rgba(92, 90, 160, 0.3);
   border-radius: 10px;
-  color: var(--gold);
-  background: rgba(231, 187, 101, 0.08);
+  color: var(--violet);
+  background: rgba(92, 90, 160, 0.06);
   cursor: pointer;
 }
-.dataset-control:hover { background: rgba(231, 187, 101, 0.15); }
+.dataset-control:hover { background: rgba(92, 90, 160, 0.12); }
 .dataset-control:disabled { cursor: not-allowed; opacity: 0.42; }
 .dataset-status { margin-right: auto; color: var(--muted); font-size: 0.78rem; }
 .media-frame { margin: 14px 0 0; }
-.media-frame img, .media-frame video { display: block; width: 100%; max-height: 430px; border-radius: 12px; object-fit: contain; background: #08070a; }
+.media-frame img, .media-frame video { display: block; width: 100%; max-height: 430px; border-radius: 12px; object-fit: contain; background: #dbe8e6; }
 .media-frame audio { display: block; width: 100%; }
+.poap-card .media-frame {
+  aspect-ratio: 1;
+  margin: 0 0 16px;
+}
+.poap-card .media-frame img {
+  height: 100%;
+  max-height: none;
+}
 .dataset-group + .dataset-group { margin-top: 44px; }
-.dataset-group h3 { margin: 0 0 14px; color: var(--gold); font-size: 0.76rem; letter-spacing: 0.13em; text-transform: uppercase; }
+.dataset-group > h3 { margin: 0 0 14px; color: var(--gold); font-size: 0.76rem; letter-spacing: 0.13em; text-transform: uppercase; }
+.holdings-timeline { display: grid; gap: 40px; }
+.holding-month__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 20px 0 16px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 9px;
+  gap: 18px;
+}
+.holding-month__heading h4 {
+  margin: 0;
+  color: var(--deep);
+  font-family: Georgia, serif;
+  font-size: clamp(1.1rem, 2vw, 1.4rem);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+.holding-month__heading span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.68rem;
+}
+.holding-month .card { background: rgba(255, 255, 255, 0.66); }
 .loading-card, .empty-card, .error-card { padding: 28px; color: var(--muted); }
-.error-card { color: #ffb8b8; border-color: rgba(255, 120, 120, 0.3); }
+.error-card { color: #8d3f36; border-color: rgba(141, 63, 54, 0.28); }
 footer {
   display: flex;
   justify-content: space-between;
@@ -262,7 +370,8 @@ footer p { margin: 0; }
   .site-header, footer { align-items: flex-start; flex-direction: column; justify-content: center; }
   .site-header { padding: 18px 0; }
   .source-links { gap: 10px 16px; }
-  .hero { padding-top: 62px; }
+  .hero { padding-top: 38px; }
+  .hero__identity { border-radius: 14px; }
   .section-heading { align-items: flex-start; flex-direction: column; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
@@ -281,6 +390,7 @@ export function buildSiteJs(): string {
   const fileIndex = new Map();
   const pageSize = 48;
   let manifest;
+  let dropLookupPromise;
   let routeEpoch = 0;
 
   const manifestPromise = fetch(manifestUrl, { headers: { Accept: "application/json" } })
@@ -339,10 +449,10 @@ export function buildSiteJs(): string {
 
   async function route() {
     const epoch = ++routeEpoch;
-    const current = (location.hash || "#overview").slice(1);
+    const current = (location.hash || "#poaps").slice(1);
     const routeName = ["overview", "poaps", "collections", "owned", "moments"].includes(current)
       ? current
-      : "overview";
+      : "poaps";
     tabLinks.forEach((link) => {
       if (link.dataset.tab === routeName) link.setAttribute("aria-current", "page");
       else link.removeAttribute("aria-current");
@@ -360,23 +470,37 @@ export function buildSiteJs(): string {
 
   function renderOverview(currentManifest) {
     const counts = currentManifest.counts;
-    view.replaceChildren(
-      heading("Overview", "Only manifest.json was loaded for this page."),
+    const context = element("section", "overview-context");
+    context.append(
+      element("h3", "", "Archive context"),
       grid([
-        metric("Tokens held", counts.holdings),
-        metric("Public Drop details", counts.uniqueDrops),
-        metric("Unavailable Drop details", counts.unavailableDropReferences),
-        metric("Related collections", counts.collectionProfiles),
-        metric("Historically owned", counts.ownedCollections),
-        metric("Authored moments", counts.publicAuthoredMoments),
-        metric("Tagged moments", counts.publicTaggedMoments),
-        metric("Public capsules", counts.ownedCapsules),
+        metric("Related collection profiles", counts.collectionProfiles),
+        metric("Unavailable public Drop details", counts.unavailableDropReferences),
+      ], "summary-grid summary-grid--secondary"),
+    );
+    view.replaceChildren(
+      heading("Archive summary", "Exact public relationships recorded in manifest.json."),
+      grid([
+        metric("POAP holdings", counts.holdings),
+        metric("Unique public Drops", counts.uniqueDrops),
+        metric("Owned Collections at snapshot", counts.ownedCollections),
+        metric("Public authored Moments", counts.publicAuthoredMoments),
+        metric("Public tagged Moments", counts.publicTaggedMoments),
+        metric("Public Capsules owned at snapshot", counts.ownedCapsules),
       ], "summary-grid"),
+      element(
+        "p",
+        "overview-note",
+        "Owned Collections and Capsules reflect the archived owner field. Authored and tagged " +
+          "Moments remain separate, so their counts are never combined.",
+      ),
+      context,
     );
   }
 
   async function renderTab(tab, currentManifest, epoch) {
     const datasets = currentManifest.datasets.filter((dataset) => dataset.tab === tab);
+    const dropsById = tab === "poaps" ? await loadDropLookup() : new Map();
     const loaded = await Promise.all(
       datasets.map(async (dataset) => {
         const state = datasetState(dataset);
@@ -402,13 +526,16 @@ export function buildSiteJs(): string {
         group.append(datasetToolbar(state));
         if (items.length === 0) {
           group.append(message("No records match this search.", "empty-card"));
+        } else if (state.id === "holdings") {
+          group.append(groupHoldingsByMonth(items, dropsById));
+        } else {
+          group.append(
+            grid(
+              items.map((item) => renderRecord(state.id, item)),
+              "card-grid",
+            ),
+          );
         }
-        group.append(
-          grid(
-            items.map((item) => renderRecord(state.id, item)),
-            "card-grid",
-          ),
-        );
         group.append(datasetPager(state, total));
         content.append(group);
       });
@@ -462,6 +589,26 @@ export function buildSiteJs(): string {
     }
     dataset.chunks.set(index, body.items);
     return body.items;
+  }
+
+  async function loadDropLookup() {
+    if (dropLookupPromise) return dropLookupPromise;
+    const dataset = manifest.datasets.find((entry) => entry.id === "drops");
+    if (!dataset) return new Map();
+    const state = datasetState(dataset);
+    dropLookupPromise = Promise.all(
+      state.paths.map((_path, index) => loadChunk(state, index)),
+    ).then((chunks) => {
+      const lookup = new Map();
+      chunks.flat().forEach((drop) => lookup.set(drop.dropId, drop));
+      return lookup;
+    });
+    try {
+      return await dropLookupPromise;
+    } catch (error) {
+      dropLookupPromise = undefined;
+      throw error;
+    }
   }
 
   async function currentPageItems(dataset) {
@@ -525,10 +672,14 @@ export function buildSiteJs(): string {
         for (let index = 0; index < dataset.paths.length; index += 1) {
           all.push(...await loadChunk(dataset, index));
         }
+        const dropsById = dataset.id === "holdings" ? await loadDropLookup() : null;
         const normalized = query.toLocaleLowerCase("en-US");
-        dataset.matches = all.filter((item) =>
-          JSON.stringify(item).toLocaleLowerCase("en-US").includes(normalized),
-        );
+        dataset.matches = all.filter((item) => {
+          const searchable = dropsById
+            ? { holding: item, drop: dropsById.get(item.dropId) || null }
+            : item;
+          return JSON.stringify(searchable).toLocaleLowerCase("en-US").includes(normalized);
+        });
       }
       await route();
     } catch (error) {
@@ -609,22 +760,97 @@ export function buildSiteJs(): string {
     return genericCard(item);
   }
 
-  function holdingCard(item) {
-    const card = element("article", "card");
-    card.append(element("h3", "", "Token " + item.poapId));
+  function holdingCard(item, drop) {
+    const card = element("article", "card poap-card");
+    const title = drop?.title || "Drop " + item.dropId;
+    if (drop?.hasArtwork !== false && drop?.imageUrl) {
+      const artwork = mediaButton("Load artwork for " + title, drop.imageUrl, "image", "");
+      artwork.classList.add("media-action--artwork");
+      card.append(artwork);
+    } else {
+      card.append(element("div", "poap-card__artwork-unavailable", "Artwork unavailable"));
+    }
+    card.append(element("h3", "", title));
+    if (drop?.description) card.append(element("p", "", drop.description));
+    card.append(meta([
+      "Token " + item.poapId,
+      "Drop " + item.dropId,
+      item.network || "",
+      formatMintedDate(item.mintedOn),
+      item.transferCount !== undefined ? item.transferCount + " transfers" : "",
+    ]));
     card.append(
       element(
         "p",
-        "",
-        "Drop " + item.dropId + " · source " + (item.sourceUid || "not recorded"),
+        "poap-card__source",
+        "Source " + (item.sourceUid || "not recorded"),
       ),
     );
-    card.append(meta([
-      item.network || "",
-      item.mintedOn ? "Minted " + item.mintedOn : "",
-      item.transferCount !== undefined ? item.transferCount + " transfers" : "",
-    ]));
-    return withArchiveFields(card, item);
+    return withArchiveFields(card, { holding: item, drop: drop || null });
+  }
+
+  function groupHoldingsByMonth(items, dropsById) {
+    const groups = new Map();
+    items.forEach((item) => {
+      const month = mintedMonth(item.mintedOn);
+      const group = groups.get(month.key) || { ...month, items: [] };
+      group.items.push(item);
+      groups.set(month.key, group);
+    });
+    const timeline = element("div", "holdings-timeline");
+    [...groups.values()]
+      .sort((left, right) => {
+        if (left.key === "unknown") return 1;
+        if (right.key === "unknown") return -1;
+        return right.key.localeCompare(left.key);
+      })
+      .forEach((group) => {
+      const section = element("section", "holding-month");
+      const header = element("div", "holding-month__heading");
+      header.append(
+        element("h4", "", group.label),
+        element("span", "", group.items.length + " on this page"),
+      );
+      section.append(
+        header,
+        grid(
+          group.items.map((item) => holdingCard(item, dropsById.get(item.dropId))),
+          "card-grid",
+        ),
+      );
+      timeline.append(section);
+      });
+    return timeline;
+  }
+
+  function mintedMonth(value) {
+    const date = unixDate(value);
+    if (!date) return { key: "unknown", label: "Mint date unavailable" };
+    return {
+      key: date.getUTCFullYear() + "-" + String(date.getUTCMonth() + 1).padStart(2, "0"),
+      label: "Minted in " + new Intl.DateTimeFormat("en", {
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC",
+      }).format(date),
+    };
+  }
+
+  function formatMintedDate(value) {
+    const date = unixDate(value);
+    if (!date) return "";
+    return "Minted " + new Intl.DateTimeFormat("en", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(date);
+  }
+
+  function unixDate(value) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return null;
+    const date = new Date(value * 1000);
+    return Number.isNaN(date.getTime()) ? null : date;
   }
 
   function dropCard(item) {
