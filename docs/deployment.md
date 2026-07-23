@@ -318,7 +318,8 @@ not another deployment of this Worker. Its extracted root can be published
 through Cloudflare Drop, Vercel Drop, a Filebase IPFS Site, or an ICP asset
 canister. The package contains provider-specific agent prompts, but operators
 remain responsible for destination accounts, domains, retention, and current
-provider limits.
+provider limits. Before upload, the extracted `index.html` can be opened
+directly to check the package without running a local server.
 
 Follow [Portable personal-site export](personal-site-export.md#deploying-the-generated-package)
 for the exact package boundary and deployment guidance. Do not add a Worker API,

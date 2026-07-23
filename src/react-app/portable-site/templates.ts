@@ -1,4 +1,4 @@
-import type { PortableSiteManifest } from "./types";
+import type { PortableSiteManifest, PortableSiteRuntimeManifest } from "./types";
 
 const POAP_IN = "https://poap.in";
 const REPOSITORY = "https://github.com/glorylab/poapin-archive";
@@ -67,6 +67,14 @@ export function buildIndexHtml(): string {
   </body>
 </html>
 `;
+}
+
+export function buildArchiveBootstrap(manifest: PortableSiteRuntimeManifest): string {
+  return (
+    `globalThis.__POAPIN_ARCHIVE__.manifest(\n` +
+    `  ${JSON.stringify(base64UrlEncode(JSON.stringify(manifest)))}\n` +
+    `);\n`
+  );
 }
 
 export function buildSiteCss(): string {
@@ -536,30 +544,33 @@ export function buildSiteJs(): string {
   return `(() => {
   "use strict";
 
-  const manifestUrl = "./manifest.json";
+  const bootstrapPath = "assets/archive.bootstrap.js";
   const view = document.querySelector("#archive-view");
   const address = document.querySelector("#owner-address");
   const tabLinks = Array.from(document.querySelectorAll("[data-tab]"));
   const dataCache = new Map();
   const fileIndex = new Map();
+  const transportLoads = new Map();
+  const verifiedJsonCache = new Map();
   const pageSize = 48;
   let manifest;
   let dropLookupPromise;
   let routeEpoch = 0;
 
-  const manifestPromise = fetch(manifestUrl, { headers: { Accept: "application/json" } })
-    .then((response) => {
-      if (!response.ok) throw new Error("Could not read manifest.json");
-      return response.json();
-    })
-    .then((value) => {
-      validateManifest(value);
-      manifest = value;
-      value.files.forEach((file) => fileIndex.set(file.path, file));
-      address.textContent = value.address;
-      document.title = "POAP archive · " + shortAddress(value.address);
-      return value;
-    });
+  Object.defineProperty(globalThis, "__POAPIN_ARCHIVE__", {
+    configurable: false,
+    writable: false,
+    value: Object.freeze({
+      manifest(payload) {
+        registerTransport(bootstrapPath, "manifest", payload);
+      },
+      chunk(path, payload) {
+        registerTransport(path, "chunk", payload);
+      },
+    }),
+  });
+
+  const manifestPromise = loadRuntimeManifest();
 
   window.addEventListener("hashchange", route);
   view.addEventListener("click", (event) => {
@@ -1270,7 +1281,7 @@ export function buildSiteJs(): string {
   function validateManifest(value) {
     if (
       !value ||
-      value.schemaVersion !== "poapin-portable-site-v1" ||
+      value.schemaVersion !== "poapin-portable-runtime-v1" ||
       !/^0x[0-9a-f]{40}$/.test(value.address || "") ||
       !value.snapshotIds ||
       !value.sources ||
@@ -1283,25 +1294,33 @@ export function buildSiteJs(): string {
         collections: value.sources.collections?.snapshotId,
         moments: value.sources.moments?.snapshotId,
       }) ||
+      !value.counts ||
       !Array.isArray(value.datasets) ||
       !Array.isArray(value.files)
     ) {
-      throw new Error("manifest.json is not a supported POAPin portable archive.");
+      throw new Error("The local archive index is not a supported POAPin portable archive.");
     }
     const paths = new Set();
     value.files.forEach((file) => {
       if (
         !file ||
         typeof file.path !== "string" ||
+        !isSafeTransportPath(file.path) ||
         paths.has(file.path) ||
-        !Number.isSafeInteger(file.bytes) ||
-        file.bytes < 0 ||
-        !/^[0-9a-f]{64}$/.test(file.sha256 || "")
+        !Number.isSafeInteger(file.count) ||
+        file.count < 0 ||
+        !file.payload ||
+        file.payload.encoding !== "base64url" ||
+        file.payload.mimeType !== "application/json" ||
+        !Number.isSafeInteger(file.payload.bytes) ||
+        file.payload.bytes < 0 ||
+        !/^[0-9a-f]{64}$/.test(file.payload.sha256 || "")
       ) {
-        throw new Error("manifest.json contains invalid file integrity metadata.");
+        throw new Error("The local archive index contains invalid data integrity metadata.");
       }
       paths.add(file.path);
     });
+    const datasetPaths = new Set();
     value.datasets.forEach((dataset) => {
       if (
         !dataset ||
@@ -1309,30 +1328,143 @@ export function buildSiteJs(): string {
         !Number.isSafeInteger(dataset.count) ||
         dataset.count < 0 ||
         !Array.isArray(dataset.paths) ||
-        dataset.paths.some((path) => !paths.has(path))
+        dataset.paths.some(
+          (path) => !paths.has(path) || datasetPaths.has(path) || !isSafeTransportPath(path),
+        )
       ) {
-        throw new Error("manifest.json contains an invalid dataset.");
+        throw new Error("The local archive index contains an invalid dataset.");
       }
+      dataset.paths.forEach((path) => datasetPaths.add(path));
     });
+    if (datasetPaths.size !== paths.size) {
+      throw new Error("The local archive index contains unreferenced data.");
+    }
   }
 
   async function verifiedJson(path) {
-    const expected = fileIndex.get(path);
-    if (!expected) throw new Error(path + " is not declared by manifest.json.");
-    const response = await fetch("./" + path, { headers: { Accept: "application/json" } });
-    if (!response.ok) throw new Error("Could not read " + path);
-    const bytes = await response.arrayBuffer();
-    if (bytes.byteLength !== expected.bytes) {
-      throw new Error(path + " failed its byte-length check.");
-    }
-    if (await sha256Hex(bytes) !== expected.sha256) {
-      throw new Error(path + " failed its SHA-256 check.");
-    }
+    if (verifiedJsonCache.has(path)) return verifiedJsonCache.get(path);
+    const pending = (async () => {
+      const expected = fileIndex.get(path);
+      if (!expected?.payload) {
+        throw new Error(path + " is not declared by the local archive index.");
+      }
+      const encoded = await loadTransport(path, "chunk");
+      const expectedEncodedLength = Math.ceil((expected.payload.bytes * 4) / 3);
+      if (encoded.length !== expectedEncodedLength) {
+        throw new Error(path + " failed its payload byte-length check.");
+      }
+      const bytes = decodeBase64Url(encoded, path);
+      if (bytes.byteLength !== expected.payload.bytes) {
+        throw new Error(path + " failed its payload byte-length check.");
+      }
+      if (await sha256Hex(bytes) !== expected.payload.sha256) {
+        throw new Error(path + " failed its payload SHA-256 check.");
+      }
+      return parseJsonBytes(bytes, path);
+    })();
+    verifiedJsonCache.set(path, pending);
     try {
-      return JSON.parse(new TextDecoder().decode(bytes));
-    } catch {
-      throw new Error(path + " is not valid JSON.");
+      return await pending;
+    } catch (error) {
+      verifiedJsonCache.delete(path);
+      throw error;
     }
+  }
+
+  async function loadRuntimeManifest() {
+    const encoded = await loadTransport(bootstrapPath, "manifest");
+    const value = parseJsonBytes(decodeBase64Url(encoded, bootstrapPath), bootstrapPath);
+    validateManifest(value);
+    manifest = value;
+    value.files.forEach((file) => fileIndex.set(file.path, file));
+    address.textContent = value.address;
+    document.title = "POAP archive · " + shortAddress(value.address);
+    return value;
+  }
+
+  function loadTransport(path, kind) {
+    if (!isSafeTransportPath(path)) {
+      return Promise.reject(new Error("The portable archive requested an unsafe local path."));
+    }
+    if (transportLoads.has(path)) {
+      return Promise.reject(new Error(path + " was requested more than once."));
+    }
+    const state = { kind, registered: false, payload: "", error: null };
+    transportLoads.set(path, state);
+    return new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.async = true;
+      script.src = new URL(path, document.baseURI).href;
+      script.addEventListener("load", () => {
+        transportLoads.delete(path);
+        script.remove();
+        if (state.error) reject(state.error);
+        else if (!state.registered) reject(new Error(path + " did not register portable data."));
+        else resolve(state.payload);
+      });
+      script.addEventListener("error", () => {
+        transportLoads.delete(path);
+        script.remove();
+        reject(new Error("Could not read " + path + "."));
+      });
+      document.head.append(script);
+    });
+  }
+
+  function registerTransport(path, kind, payload) {
+    const state = transportLoads.get(path);
+    if (!state || state.kind !== kind) return;
+    if (state.registered) {
+      state.error = new Error(path + " registered portable data more than once.");
+      return;
+    }
+    if (typeof payload !== "string") {
+      state.error = new Error(path + " registered invalid portable data.");
+      return;
+    }
+    state.registered = true;
+    state.payload = payload;
+  }
+
+  function decodeBase64Url(value, path) {
+    if (
+      typeof value !== "string" ||
+      value.length % 4 === 1 ||
+      !/^[A-Za-z0-9_-]+$/.test(value)
+    ) {
+      throw new Error(path + " is not valid Base64URL data.");
+    }
+    const standard = value.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = standard + "=".repeat((4 - (standard.length % 4)) % 4);
+    let binary;
+    try {
+      binary = atob(padded);
+    } catch {
+      throw new Error(path + " is not valid Base64URL data.");
+    }
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  }
+
+  function parseJsonBytes(bytes, path) {
+    try {
+      return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    } catch {
+      throw new Error(path + " is not valid portable JSON.");
+    }
+  }
+
+  function isSafeTransportPath(path) {
+    return (
+      typeof path === "string" &&
+      path.length > 0 &&
+      !path.startsWith("/") &&
+      !path.includes("\\\\") &&
+      !path.split("/").includes("..")
+    );
   }
 
   async function sha256Hex(bytes) {
@@ -1389,16 +1521,18 @@ Address: \`${manifest.address}\`
 snapshot. It is kept separate from Collections that merely contain a held Drop or are associated
 with an authored Moment, and it does not prove current control.
 
-Open \`index.html\` through a static web server. The page first reads only \`manifest.json\`;
-each section loads one JSON chunk at a time and shows records in small pages. Archived media URLs
-remain in the data, but media is requested only after a visitor clicks its load button.
+Double-click \`index.html\` to browse this archive directly from the extracted folder. The same
+files can also be served by any static host. The page reads a small local archive index first;
+each section then loads the verified data chunks it needs and shows records in small pages.
+Archived media URLs remain in the data, but media is requested only after a visitor clicks its
+load button.
 
 ## Integrity and portability
 
 \`manifest.json\` records the UTF-8 byte length, record count, and SHA-256 digest for every
-other generated file; \`checksums.sha256\` is convenient for standard checksum tools. All paths
-are relative. No account connection, API, database, build
-step, or server runtime is required.
+other generated file; \`checksums.sha256\` is convenient for standard checksum tools. Local data
+payloads are also checked before they are parsed. All paths are relative. No account connection,
+API, database, build step, local server, or hosted runtime is required.
 
 See \`DEPLOY.md\` for direct-upload instructions and \`prompts/\` for agent-ready deployment
 prompts. Keep the entire folder together when moving or deploying it.
@@ -1411,6 +1545,9 @@ export function buildDeployGuide(): string {
 Deploy the **contents of this folder**, with \`index.html\` at the published root. If you
 received a ZIP, extract it first unless the destination explicitly accepts a ZIP upload.
 Do not rewrite the relative paths under \`assets/\` or \`data/\`.
+
+Before deploying, you can simply double-click \`index.html\` in the extracted folder. It should
+open the archive in a current browser without starting a local server.
 
 ## Direct upload
 
@@ -1504,4 +1641,13 @@ Never expose seed phrases, PEM files, identities, or wallet credentials. Configu
 \`YOUR_DOMAIN\` only after the canister URL works. Return the canister identifier and public URL.
 `,
   };
+}
+
+function base64UrlEncode(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  const chunks: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += 32_768) {
+    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 32_768)));
+  }
+  return btoa(chunks.join("")).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/u, "");
 }

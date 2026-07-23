@@ -1,5 +1,6 @@
 import {
   buildAgentPrompts,
+  buildArchiveBootstrap,
   buildDeployGuide,
   buildIndexHtml,
   buildReadme,
@@ -18,6 +19,7 @@ import type {
   PortableSiteFile,
   PortableSiteManifest,
   PortableSiteManifestFile,
+  PortableSiteRuntimeManifest,
   PortableSiteSnapshot,
   PortableSiteSources,
   PortableSiteTab,
@@ -35,6 +37,7 @@ export type {
   PortableSiteFile,
   PortableSiteManifest,
   PortableSiteManifestFile,
+  PortableSiteRuntimeManifest,
   PortableSiteSnapshot,
   PortableSiteSnapshotIds,
   PortableSiteSources,
@@ -44,10 +47,11 @@ export type {
 export const PORTABLE_SITE_LIMITS = {
   maxFiles: 1_000,
   maxFileBytes: 5_242_880,
-  dataChunkTargetBytes: 4_194_304,
+  dataChunkTargetBytes: 3_670_016,
 } as const;
 
 const MANIFEST_PATH = "manifest.json";
+const RUNTIME_BOOTSTRAP_PATH = "assets/archive.bootstrap.js";
 const DATA_SCHEMA_VERSION = "poapin-portable-data-v1";
 const textEncoder = new TextEncoder();
 
@@ -112,9 +116,9 @@ export async function buildPortableSiteBundle(
     const chunks = await chunkDataset(dataset, normalized, signal);
     const paths: string[] = [];
     for (const chunk of chunks) {
-      const path = `data/${dataset.id}-${String(chunk.chunk.index).padStart(4, "0")}.json`;
+      const path = `data/${dataset.id}-${String(chunk.chunk.index).padStart(4, "0")}.data.js`;
       paths.push(path);
-      files.push(await createFile(path, serializeJson(chunk), "application/json", chunk.count));
+      files.push(await createDataTransportFile(path, serializeJson(chunk), chunk.count));
     }
     datasetManifests.push({
       id: dataset.id,
@@ -127,10 +131,16 @@ export async function buildPortableSiteBundle(
   }
 
   const provisionalManifest = buildManifest(normalized, datasetManifests, []);
+  const runtimeManifest = buildRuntimeManifest(normalized, datasetManifests, files);
   const staticContents: Array<[string, string, string]> = [
     ["index.html", buildIndexHtml(), "text/html; charset=utf-8"],
     ["assets/site.css", buildSiteCss(), "text/css; charset=utf-8"],
     ["assets/site.js", buildSiteJs(), "text/javascript; charset=utf-8"],
+    [
+      RUNTIME_BOOTSTRAP_PATH,
+      buildArchiveBootstrap(runtimeManifest),
+      "text/javascript; charset=utf-8",
+    ],
     ["robots.txt", "User-agent: *\nDisallow: /\n", "text/plain; charset=utf-8"],
     ["README.md", buildReadme(provisionalManifest), "text/markdown; charset=utf-8"],
     ["DEPLOY.md", buildDeployGuide(), "text/markdown; charset=utf-8"],
@@ -623,7 +633,7 @@ async function chunkDataset(
     }
     if (current.length === 0) {
       throw new Error(
-        `A ${dataset.id} record is too large for the 4 MiB portable data chunk target.`,
+        `A ${dataset.id} record is too large for the 3.5 MiB portable data chunk target.`,
       );
     }
     itemChunks.push(current);
@@ -631,7 +641,7 @@ async function chunkDataset(
     currentItemBytes = itemBytes;
     if (envelopeBytes + currentItemBytes >= PORTABLE_SITE_LIMITS.dataChunkTargetBytes) {
       throw new Error(
-        `A ${dataset.id} record is too large for the 4 MiB portable data chunk target.`,
+        `A ${dataset.id} record is too large for the 3.5 MiB portable data chunk target.`,
       );
     }
   }
@@ -641,7 +651,7 @@ async function chunkDataset(
   return itemChunks.map((items, index) => {
     const body = makeChunkBody(dataset.id, snapshot, index + 1, total, items);
     if (utf8Bytes(serializeJson(body)) >= PORTABLE_SITE_LIMITS.dataChunkTargetBytes) {
-      throw new Error(`${dataset.id} chunk ${index + 1} exceeded its 4 MiB target.`);
+      throw new Error(`${dataset.id} chunk ${index + 1} exceeded its 3.5 MiB target.`);
     }
     return body;
   });
@@ -674,7 +684,7 @@ function buildManifest(
   const owned = snapshot.ownedCollectionExports;
   const media = mediaCoverage(snapshot);
   return {
-    schemaVersion: "poapin-portable-site-v1",
+    schemaVersion: "poapin-portable-site-v2",
     address: snapshot.address,
     generatedAt: snapshot.generatedAt ?? null,
     generator: {
@@ -730,6 +740,33 @@ function buildManifest(
       scope: "Every generated file except manifest.json",
     },
     files,
+  };
+}
+
+function buildRuntimeManifest(
+  snapshot: PortableSiteSnapshot,
+  datasets: PortableSiteDatasetManifest[],
+  dataFiles: PortableSiteFile[],
+): PortableSiteRuntimeManifest {
+  const manifest = buildManifest(snapshot, datasets, []);
+  return {
+    schemaVersion: "poapin-portable-runtime-v1",
+    address: manifest.address,
+    generatedAt: manifest.generatedAt,
+    snapshotIds: manifest.snapshotIds,
+    sources: manifest.sources,
+    counts: manifest.counts,
+    datasets: manifest.datasets,
+    files: dataFiles.map((file) => {
+      if (!file.payload) {
+        throw new Error(`${file.path} is missing its portable JSON payload metadata.`);
+      }
+      return {
+        path: file.path,
+        count: file.count,
+        payload: file.payload,
+      };
+    }),
   };
 }
 
@@ -805,6 +842,29 @@ async function createFile(
   };
 }
 
+async function createDataTransportFile(
+  path: string,
+  json: string,
+  count: number,
+): Promise<PortableSiteFile> {
+  const encoded = base64UrlEncode(json);
+  const content =
+    `globalThis.__POAPIN_ARCHIVE__.chunk(\n` +
+    `  ${JSON.stringify(path)},\n` +
+    `  ${JSON.stringify(encoded)}\n` +
+    `);\n`;
+  const file = await createFile(path, content, "text/javascript; charset=utf-8", count);
+  return {
+    ...file,
+    payload: {
+      encoding: "base64url",
+      mimeType: "application/json",
+      bytes: utf8Bytes(json),
+      sha256: await sha256Hex(json),
+    },
+  };
+}
+
 function toManifestFile(file: PortableSiteFile): PortableSiteManifestFile {
   return {
     path: file.path,
@@ -812,6 +872,7 @@ function toManifestFile(file: PortableSiteFile): PortableSiteManifestFile {
     bytes: file.bytes,
     count: file.count,
     sha256: file.sha256,
+    ...(file.payload ? { payload: file.payload } : {}),
   };
 }
 
@@ -850,6 +911,15 @@ function serializeJson(value: unknown, pretty = false): string {
 
 function utf8Bytes(value: string): number {
   return textEncoder.encode(value).byteLength;
+}
+
+function base64UrlEncode(value: string): string {
+  const bytes = textEncoder.encode(value);
+  const chunks: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += 32_768) {
+    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 32_768)));
+  }
+  return btoa(chunks.join("")).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/u, "");
 }
 
 function jsonArrayItemBytes(value: unknown): number {
