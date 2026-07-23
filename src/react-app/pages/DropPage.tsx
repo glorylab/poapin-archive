@@ -195,6 +195,9 @@ export function DropPage({ dropId }: { dropId: number }) {
                 Open original artwork
               </a>
             ) : null}
+            <Link className="button button--outline" href={`/moments?drop=${drop.dropId}`}>
+              Explore Moments
+            </Link>
           </div>
           <p className="snapshot-note">
             This record reflects a preserved snapshot and may not match current ownership or event

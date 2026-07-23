@@ -7,8 +7,11 @@ interface HeaderProps {
 
 export function Header({ meta }: HeaderProps) {
   const { pathname, hash } = useLocation();
-  const active =
-    pathname.startsWith("/address") || (pathname === "/" && hash === "#address")
+  const onMomentsRoute =
+    pathname.startsWith("/moments") || /^\/owners\/[^/]+\/moments\/?$/.test(pathname);
+  const active = onMomentsRoute
+    ? "moments"
+    : pathname.startsWith("/address") || (pathname === "/" && hash === "#address")
       ? "address"
       : pathname.startsWith("/collections")
         ? "collections"
@@ -40,9 +43,17 @@ export function Header({ meta }: HeaderProps) {
             Collections
           </Link>
           <Link
+            className={active === "moments" ? "nav__link is-active" : "nav__link"}
+            href="/moments"
+            aria-current={active === "moments" ? "page" : undefined}
+          >
+            Moments
+          </Link>
+          <Link
             className={active === "address" ? "nav__link is-active" : "nav__link"}
             href="/#address"
             aria-current={active === "address" ? "page" : undefined}
+            data-nav-optional="export"
           >
             Export
           </Link>
@@ -50,6 +61,7 @@ export function Header({ meta }: HeaderProps) {
             className={active === "about" ? "nav__link is-active" : "nav__link"}
             href="/about-data"
             aria-current={active === "about" ? "page" : undefined}
+            data-nav-optional="about"
           >
             About
           </Link>

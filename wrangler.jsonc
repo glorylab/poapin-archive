@@ -36,6 +36,12 @@
       "database_id": "c1f9213b-b314-41e3-9cf9-5ad780c9e48a",
       "migrations_dir": "migrations/collections",
     },
+    {
+      "binding": "MOMENTS_DB",
+      "database_name": "poapin-archive-moments-20260723-v1",
+      "database_id": "34c5add5-3057-463d-9863-de9cd565ae64",
+      "migrations_dir": "migrations/moments",
+    },
   ],
   "r2_buckets": [
     {
@@ -64,6 +70,10 @@
     "SNAPSHOT_ID": "2026-07-02-v1",
     "COLLECTIONS_SNAPSHOT_ID": "collections-2026-07-22-v1",
     "COLLECTIONS_RELEASE_ID": "collections-2026-07-22-v1-c1f9213b",
+    "MOMENTS_SNAPSHOT_ID": "moments-2026-07-23-v1",
+    "MOMENTS_RELEASE_ID": "moments-2026-07-23-v1-media-r1",
+    "MOMENTS_SOURCE_DATABASE_SHA256": "d1ffe1d63601f7109bc1c3f87a4e72b1bc91a29f21b92a87c0b037be64fa55cd",
+    "MOMENTS_BUILD_MANIFEST_SHA256": "21ef4c8ef6351b59a92210cd0ba4631c5e9ef9034ec0dd5b0ddf9ac3dd702bf3",
     "API_CACHE_VERSION": "v1",
     "MEDIA_BASE_URL": "https://media.poap.in",
   },

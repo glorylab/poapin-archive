@@ -192,6 +192,12 @@ export function CollectionPage({ collectionId }: { collectionId: number }) {
             <Link className="button button--outline" href="#export">
               Export collection
             </Link>
+            <Link
+              className="button button--outline"
+              href={`/moments?collection=${collection.collectionId}`}
+            >
+              Explore Moments
+            </Link>
           </div>
 
           <dl className="collection-profile__facts">

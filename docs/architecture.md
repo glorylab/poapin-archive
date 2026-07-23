@@ -108,6 +108,27 @@ readiness marker. A fully loaded staging database remains unavailable until its
 eligible media has been published and a separately reviewed finalizer marks the
 same snapshot ready.
 
+### D1 Moments
+
+`MOMENTS_DB` preserves authored Moments independently from the fixed Drop
+archive and Collections. It stores normalized Moment content, many-to-many Drop
+relations, links, user tags, explicit capsules, public visibility decisions,
+suppression state, verified media descriptors, and the derived
+Moment-to-Collection projection. Raw gateway URLs and unrestricted media
+metadata remain outside the serving database.
+
+The public view requires an affirmative visibility row, at least one Drop, no
+relationship to a Moments-hidden Drop, and no active suppression. A media row
+becomes public only after its content-addressed R2 object has been verified.
+Metadata-only releases preserve source media counts while exposing no object
+keys, allowing the browser to distinguish pending preservation from a genuinely
+text-only Moment.
+
+Every Moments request checks the configured snapshot, source-database digest,
+build-manifest digest, and activation marker. A new D1 release is staged under a
+new database UUID and stays unavailable until the resumable import journal,
+table counts, projection, indexes, foreign keys, and integrity checks pass.
+
 ### R2 media
 
 `ARCHIVE_BUCKET` stores source artwork and eligible Collection logos and banners
@@ -133,6 +154,11 @@ It must change whenever that binding or its published contents change, even when
 `COLLECTIONS_SNAPSHOT_ID` remains the same. Cache hits therefore need no D1
 readiness query merely to detect a replacement release.
 
+Moments cache keys additionally include `MOMENTS_RELEASE_ID`, the expected
+source-database SHA-256, and the exact build-manifest SHA-256. The same digests
+must exist in the activated D1 metadata, binding a cache namespace to one
+verified database build rather than only a logical snapshot name.
+
 The Cache API is data-center-local and does not replace persistent storage.
 Where Workers caching can serve a response before Worker execution, prefer it
 for truly public, versioned resources. Use explicit `Cache-Control` and
@@ -156,11 +182,11 @@ A snapshot moves through these states:
 Activation happens after data and media publication, never halfway through an
 import. See [Data import](data-import.md).
 
-The fixed archive ZIP and Compass Collections are separate sources. Compass
-does not expose a transaction spanning GraphQL requests, so a Collections
-release additionally requires two independent full captures with identical
-canonical row counts and SHA-256 digests. This is an auditable API-level
-capture, not a claim to possess the source PostgreSQL database.
+The fixed archive ZIP, Compass Collections, and Compass Moments are separate
+sources. Compass does not expose a transaction spanning GraphQL requests, so
+Collections and Moments releases each require two independent full captures
+with identical canonical row counts and SHA-256 digests. These are auditable
+API-level captures, not physical copies of the source PostgreSQL database.
 
 ## Query and CPU rules
 

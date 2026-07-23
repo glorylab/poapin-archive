@@ -21,8 +21,8 @@
     "build": "tsc -b && vite build",
     "check": "tsc -b && vite build && wrangler deploy --dry-run",
     "cf-typegen": "wrangler types && node tools/normalize-worker-types.mjs",
-    "db:migrate:local": "wrangler d1 migrations apply CATALOG_DB --local && wrangler d1 migrations apply HOLDINGS_DB --local && wrangler d1 migrations apply COLLECTIONS_DB --local",
-    "db:seed:local": "wrangler d1 execute CATALOG_DB --local --file fixtures/catalog.sql && wrangler d1 execute HOLDINGS_DB --local --file fixtures/holdings.sql && wrangler d1 execute COLLECTIONS_DB --local --file fixtures/collections.sql",
+    "db:migrate:local": "wrangler d1 migrations apply CATALOG_DB --local && wrangler d1 migrations apply HOLDINGS_DB --local && wrangler d1 migrations apply COLLECTIONS_DB --local && wrangler d1 migrations apply MOMENTS_DB --local",
+    "db:seed:local": "wrangler d1 execute CATALOG_DB --local --file fixtures/catalog.sql && wrangler d1 execute HOLDINGS_DB --local --file fixtures/holdings.sql && wrangler d1 execute COLLECTIONS_DB --local --file fixtures/collections.sql && wrangler d1 execute MOMENTS_DB --local --file fixtures/moments.sql",
     "db:setup:local": "npm run db:migrate:local && npm run db:seed:local",
     "deploy": "npm run build && wrangler deploy",
     "dev": "vite",
@@ -36,8 +36,16 @@
     "collections:build-d1": "node tools/collections-backup/cli.mjs build-d1",
     "collections:load-d1": "node tools/collections-backup/d1-loader.mjs",
     "collections:package": "node tools/collections-backup/cli.mjs package",
+    "moments:snapshot": "node tools/moments-backup/cli.mjs snapshot",
+    "moments:compare": "node tools/moments-backup/cli.mjs compare",
+    "moments:verify": "node tools/moments-backup/cli.mjs verify",
+    "moments:collection-map": "node tools/moments-backup/cli.mjs build-collection-map",
+    "moments:build-d1": "node tools/moments-backup/cli.mjs build-d1",
+    "moments:load-d1": "node tools/moments-backup/d1-loader.mjs",
+    "moments:media": "node tools/moments-media/cli.mjs",
     "preview": "npm run build && vite preview",
     "test": "npm run test:worker && npm run test:tools",
+    "test:browser": "playwright test",
     "test:media-upload": "node --test tools/r2-media-upload/test/*.test.mjs",
     "test:tools": "node --test tools/*/test/*.test.mjs",
     "test:worker": "vitest run",
@@ -53,6 +61,7 @@
     "@aws-sdk/client-s3": "^3.1092.0",
     "@cloudflare/vite-plugin": "^1.15.3",
     "@cloudflare/vitest-pool-workers": "^0.12.4",
+    "@playwright/test": "1.61.1",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
@@ -64,7 +73,7 @@
     "wrangler": "^4.113.0"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.13.0"
   },
   "overrides": {
     "esbuild": "^0.28.1",

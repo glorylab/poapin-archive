@@ -366,6 +366,7 @@ export function safeExternalUrl(value: string | null): string | null {
   if (!value || value.length > 2_048) return null;
   try {
     const url = new URL(value);
+    if (url.username || url.password) return null;
     return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
   } catch {
     return null;

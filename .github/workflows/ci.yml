@@ -46,3 +46,9 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Install browser test runtime
+        run: npx playwright install --with-deps chromium
+
+      - name: Test browser media loading policy
+        run: npm run test:browser

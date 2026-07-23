@@ -8,17 +8,23 @@ import type {
   Drop,
   DropSort,
   EventType,
+  MomentAuthorExportPage,
+  MomentDetail,
+  MomentMediaKind,
+  MomentsPageResponse,
   OwnerPageResponse,
   PageResponse,
 } from "./types";
 
 export class ApiError extends Error {
   readonly status: number;
+  readonly retryAfterMs: number | null;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, retryAfterMs: number | null = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -36,10 +42,23 @@ async function requestJson<T>(path: string, signal?: AbortSignal): Promise<T> {
     } catch {
       // Keep the status-based fallback when an edge error is not JSON.
     }
-    throw new ApiError(response.status, message);
+    throw new ApiError(
+      response.status,
+      message,
+      parseRetryAfter(response.headers.get("Retry-After")),
+    );
   }
 
   return (await response.json()) as T;
+}
+
+function parseRetryAfter(value: string | null): number | null {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1_000);
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return null;
+  return Math.max(0, timestamp - Date.now());
 }
 
 export function getMeta(signal?: AbortSignal) {
@@ -116,4 +135,41 @@ export function getCollectionItems(
 
 export function getCollectionExportManifest(collectionId: number, signal?: AbortSignal) {
   return requestJson<CollectionExportManifest>(`/api/collections/${collectionId}/export`, signal);
+}
+
+export interface MomentsQuery {
+  author?: string;
+  drop?: number;
+  collection?: number;
+  media?: MomentMediaKind;
+  cursor?: string | null;
+  limit?: number;
+}
+
+export function getMoments(query: MomentsQuery = {}, signal?: AbortSignal) {
+  const params = new URLSearchParams();
+  if (query.author) params.set("author", query.author.toLowerCase());
+  if (query.drop) params.set("drop", String(query.drop));
+  if (query.collection) params.set("collection", String(query.collection));
+  if (query.media) params.set("media", query.media);
+  if (query.cursor) params.set("cursor", query.cursor);
+  params.set("limit", String(query.limit ?? 24));
+  return requestJson<MomentsPageResponse>(`/api/moments?${params}`, signal);
+}
+
+export function getMoment(momentId: string, signal?: AbortSignal) {
+  return requestJson<MomentDetail>(`/api/moments/${encodeURIComponent(momentId)}`, signal);
+}
+
+export function getMomentAuthorExport(
+  address: string,
+  cursor?: string | null,
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams({ limit: "48" });
+  if (cursor) params.set("cursor", cursor);
+  return requestJson<MomentAuthorExportPage>(
+    `/api/moments/authors/${encodeURIComponent(address.toLowerCase())}/export?${params}`,
+    signal,
+  );
 }

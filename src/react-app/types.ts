@@ -219,3 +219,88 @@ export interface CollectionExportManifest {
     pageSize?: number;
   }>;
 }
+
+export type MomentMediaKind = "image" | "video" | "audio" | "other";
+export type MediaPreservationState = "none" | "pending" | "partial" | "complete";
+
+export interface MomentMediaPreview {
+  mediaId: string;
+  kind: MomentMediaKind;
+  mimeType: string | null;
+  url: string;
+  thumbnailUrl: string | null;
+  width: number | null;
+  height: number | null;
+}
+
+export interface MomentMedia extends MomentMediaPreview {
+  byteLength: number | null;
+  durationMs: number | null;
+  position: number;
+}
+
+export interface MomentSummary {
+  momentId: string;
+  displayId: string | null;
+  author: string | null;
+  description: string | null;
+  createdOn: string;
+  updatedOn: string | null;
+  isUpdated: boolean;
+  sourceMediaCount: number;
+  mediaCount: number;
+  mediaPreservationState: MediaPreservationState;
+  previewMedia: MomentMediaPreview | null;
+  dropIds: number[];
+  collectionIds: number[];
+}
+
+export interface MomentLinkRecord {
+  linkId: string;
+  title: string | null;
+  description: string | null;
+  url: string | null;
+  imageUrl: string | null;
+  createdOn: string | null;
+}
+
+export interface MomentUserTag {
+  tagId: string;
+  address: string | null;
+  ens: string | null;
+  x: number | null;
+  y: number | null;
+  createdOn: string | null;
+}
+
+export interface MomentCapsule {
+  capsuleId: number;
+  externalId: string | null;
+  title: string | null;
+  description: string | null;
+  imageUrl: string | null;
+  url: string | null;
+  owner: string | null;
+  createdOn: string;
+}
+
+export interface MomentDetail extends MomentSummary {
+  cid: string | null;
+  tokenId: string | null;
+  media: MomentMedia[];
+  links: MomentLinkRecord[];
+  userTags: MomentUserTag[];
+  capsules: MomentCapsule[];
+}
+
+export interface MomentsPageResponse extends PageResponse<MomentSummary> {
+  snapshotId: string;
+}
+
+export interface MomentAuthorExportPage {
+  schemaVersion: "poapin-moment-author-export-v1";
+  snapshotId: string;
+  author: string;
+  items: MomentDetail[];
+  nextCursor: string | null;
+}

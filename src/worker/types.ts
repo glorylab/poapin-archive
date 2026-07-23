@@ -2,6 +2,7 @@ export interface Bindings {
   CATALOG_DB: D1Database;
   HOLDINGS_DB: D1Database;
   COLLECTIONS_DB: D1Database;
+  MOMENTS_DB: D1Database;
   ARCHIVE_BUCKET: R2Bucket;
   BROWSE_RATE_LIMITER: RateLimit;
   OWNER_RATE_LIMITER: RateLimit;
@@ -9,6 +10,10 @@ export interface Bindings {
   SNAPSHOT_ID: string;
   COLLECTIONS_SNAPSHOT_ID: string;
   COLLECTIONS_RELEASE_ID: string;
+  MOMENTS_SNAPSHOT_ID: string;
+  MOMENTS_RELEASE_ID: string;
+  MOMENTS_SOURCE_DATABASE_SHA256: string;
+  MOMENTS_BUILD_MANIFEST_SHA256: string;
   API_CACHE_VERSION: string;
   MEDIA_BASE_URL: string;
 }

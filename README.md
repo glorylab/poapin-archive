@@ -20,13 +20,18 @@ artwork served from [`media.poap.in`](https://media.poap.in).
 > original artwork objects have been integrity-checked and published. Curated
 > POAP Collections use a separately verified `collections-2026-07-22-v1`
 > snapshot and release lifecycle; every API response identifies the Collections
-> snapshot it came from.
+> snapshot it came from. POAP Moments use an independent, twice-captured
+> `moments-2026-07-23-v1` snapshot, D1 release gate, and resumable original-media
+> archive. Its media-bound release verified all 30,548 stored R2 objects in two
+> independent remote passes with zero failures.
 
 ## What it is
 
 - A fast, read-only browser for drops in a published snapshot.
 - Bounded browse, detail, and segmented export APIs for preserved POAP
   Collections.
+- A Moments hub with Drop and Collection albums, authored timelines,
+  bandwidth-safe detail pages, and bounded metadata exports.
 - An address view for finding and exporting the POAPs recorded for an address.
 - A transparent archive: every published dataset should identify its source,
   capture time, checksum, and known limitations.
@@ -44,12 +49,13 @@ No wallet connection is required.
 | Catalog     | Cloudflare D1 (`CATALOG_DB`)     | Drops, snapshot metadata, search fields, and artwork references  |
 | Holdings    | Cloudflare D1 (`HOLDINGS_DB`)    | Address-to-token lookup, isolated from catalog traffic           |
 | Collections | Cloudflare D1 (`COLLECTIONS_DB`) | Curated collections, memberships, sections, and export relations |
+| Moments     | Cloudflare D1 (`MOMENTS_DB`)     | Authored Moments, Drop links, albums, media proof, and exports   |
 | Media       | Cloudflare R2 (`ARCHIVE_BUCKET`) | Immutable original artwork; derived thumbnails may follow later  |
 | Cache       | Workers Cache + HTTP caching     | Snapshot-versioned public GET responses and immutable media      |
 
-Splitting catalog, holdings, and Collections keeps their access patterns and
-snapshot lifecycles independent. Cache is an expendable acceleration layer; D1
-and R2 remain the sources of served data. See
+Splitting catalog, holdings, Collections, and Moments keeps their access
+patterns and snapshot lifecycles independent. Cache is an expendable
+acceleration layer; D1 and R2 remain the sources of served data. See
 [Architecture](docs/architecture.md) for the request and data flow.
 
 ## Cost is a design constraint
@@ -96,7 +102,7 @@ Cloudflare logging and retention settings before enabling them.
 
 Requirements:
 
-- Node.js 22 or newer
+- Node.js 22.13 or newer
 - npm
 - a Cloudflare account only when creating or deploying remote resources
 
@@ -111,12 +117,16 @@ Useful checks:
 ```bash
 npm run typecheck
 npm test
+npx playwright install chromium
+npm run test:browser
 npm run build
 npm run check
 ```
 
 `npm run check` also performs a Wrangler dry-run. Tests use the Cloudflare
-Workers runtime rather than a Node-only approximation.
+Workers runtime rather than a Node-only approximation. The focused Chromium
+suite verifies that archived audio and video remain network-idle until the user
+explicitly asks to load them.
 
 The checked-in local fixtures are intentionally tiny and synthetic. They are
 kept outside the migration chain, so applying production migrations can never
@@ -147,6 +157,15 @@ data anonymously reachable through Compass, not its physical private database;
 all 26,550 public media objects passed a second remote integrity verification,
 and the snapshot-scoped D1 database was independently loaded, verified, and
 activated before its Worker binding changed.
+
+POAP Moments use a separate two-pass GraphQL capture, canonical stability
+comparison, Drop-to-Collection projection, private structured backup, staged D1
+loader, and resumable R2 media capture. The preserved source contains 25,959
+Moments, 26,521 Moment-to-Drop relationships, 32,891 media records, and 64,862
+gateway records. The first media-bound public projection contains 24,459
+Moments and 26,198 public media records. See
+[Moments preservation](docs/moments.md) and the
+[Moments backup guide](tools/moments-backup/README.md).
 
 ## Deployment
 

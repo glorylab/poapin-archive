@@ -31,6 +31,8 @@ Before opening a pull request, run the same gates as CI:
 ```bash
 npm run typecheck
 npm test
+npx playwright install chromium
+npm run test:browser
 npm run build
 ```
 
