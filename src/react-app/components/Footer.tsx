@@ -13,7 +13,7 @@ export function Footer({ meta }: { meta: ArchiveMeta | null }) {
           </div>
         </div>
         <div className="footer__links">
-          <Link href="/">Browse drops</Link>
+          <Link href="/drops">Browse Drops</Link>
           <Link href="/collections">Collections hub</Link>
           <Link href="/moments">Browse Moments</Link>
           <Link href="/about-data">About the data</Link>

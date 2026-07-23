@@ -6,18 +6,20 @@ interface HeaderProps {
 }
 
 export function Header({ meta }: HeaderProps) {
-  const { pathname, hash } = useLocation();
+  const { pathname } = useLocation();
   const onMomentsRoute =
     pathname.startsWith("/moments") || /^\/owners\/[^/]+\/moments\/?$/.test(pathname);
   const active = onMomentsRoute
     ? "moments"
-    : pathname.startsWith("/address") || (pathname === "/" && hash === "#address")
-      ? "address"
-      : pathname.startsWith("/collections")
-        ? "collections"
-        : pathname === "/about-data"
-          ? "about"
-          : "browse";
+    : pathname.startsWith("/collections")
+      ? "collections"
+      : pathname === "/about-data"
+        ? "about"
+        : pathname === "/drops" || pathname === "/drops/" || pathname.startsWith("/drop/")
+          ? "drops"
+          : pathname === "/"
+            ? "home"
+            : "";
 
   return (
     <header className="site-header">
@@ -29,9 +31,17 @@ export function Header({ meta }: HeaderProps) {
 
         <nav className="nav" aria-label="Primary navigation">
           <Link
-            className={active === "browse" ? "nav__link is-active" : "nav__link"}
+            className={active === "home" ? "nav__link is-active" : "nav__link"}
             href="/"
-            aria-current={active === "browse" ? "page" : undefined}
+            aria-current={active === "home" ? "page" : undefined}
+            data-nav-optional="home"
+          >
+            Home
+          </Link>
+          <Link
+            className={active === "drops" ? "nav__link is-active" : "nav__link"}
+            href="/drops"
+            aria-current={active === "drops" ? "page" : undefined}
           >
             Drops
           </Link>
@@ -48,14 +58,6 @@ export function Header({ meta }: HeaderProps) {
             aria-current={active === "moments" ? "page" : undefined}
           >
             Moments
-          </Link>
-          <Link
-            className={active === "address" ? "nav__link is-active" : "nav__link"}
-            href="/#address"
-            aria-current={active === "address" ? "page" : undefined}
-            data-nav-optional="export"
-          >
-            Lookup
           </Link>
           <Link
             className={active === "about" ? "nav__link is-active" : "nav__link"}

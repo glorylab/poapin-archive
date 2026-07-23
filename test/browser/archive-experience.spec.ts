@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const ADDRESS = "0x17470261d36fd5f3c6d19e750f6f6f7b389df357";
+const MOMENT_MEDIA_URL =
+  "https://media.poap.in/snapshots/moments-2026-07-23-v1/moments/original/example.mp4";
 
 const archiveMeta = {
   snapshotId: "2026-07-02-v1",
@@ -33,13 +35,37 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/drops?*", (route) =>
     route.fulfill({ json: { items: [drop(1, "Archive opening")], nextCursor: null } }),
   );
+  await page.route("**/api/collections?*", (route) =>
+    route.fulfill({
+      json: {
+        items: [collection(1, "Archive stewards")],
+        nextCursor: null,
+      },
+    }),
+  );
+  await page.route("**/api/moments?*", (route) =>
+    route.fulfill({
+      json: {
+        snapshotId: "moments-2026-07-23-v1",
+        items: [moment("00000000-0000-4000-8000-000000000001")],
+        nextCursor: null,
+      },
+    }),
+  );
 });
 
-test("homepage makes address and ENS lookup the primary action", async ({ page }) => {
+test("homepage leads with address lookup, exact statistics, and small archive previews", async ({
+  page,
+}) => {
   let requestedName = "";
+  const mediaRequests: string[] = [];
   await page.route("**/api/resolve-address?*", async (route) => {
     requestedName = new URL(route.request().url()).searchParams.get("name") ?? "";
     await route.fulfill({ json: { name: "ericmwalk.eth", address: ADDRESS } });
+  });
+  await page.route("https://media.poap.in/**", async (route) => {
+    mediaRequests.push(route.request().url());
+    await route.abort();
   });
   await mockOwnerPage(page, {
     items: [holding(3, 1_773_705_600)],
@@ -50,10 +76,51 @@ test("homepage makes address and ENS lookup the primary action", async ({ page }
 
   await expect(page.getByRole("heading", { name: /Find the POAPs you kept/i })).toBeVisible();
   await expect(page.getByLabel("Look up a collection")).toBeVisible();
-  await expect(page.getByLabel("Search drops")).toBeVisible();
+  await expect(page.getByText("POAP is dead. Long live POAP!")).toBeVisible();
+  await expect(page.getByLabel("Search drops")).toHaveCount(0);
   await expect(page.getByText("Search the archive")).toHaveCount(0);
-  await expect(page.getByText("collections", { exact: true })).toBeVisible();
-  await expect(page.getByText("public moments", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Preserved Drops" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Collections", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Moments", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Browse all Drops" })).toHaveAttribute(
+    "href",
+    "/drops",
+  );
+  await expect(page.getByRole("link", { name: "Explore Collections" })).toHaveAttribute(
+    "href",
+    "/collections",
+  );
+  await expect(page.getByRole("link", { name: "Browse public Moments" })).toHaveAttribute(
+    "href",
+    "/moments",
+  );
+  await expect(page.locator(".home-preview--drops .drop-card")).toHaveCount(1);
+  await expect(page.locator(".home-preview--collections .collection-card")).toHaveCount(1);
+  await expect(page.locator(".home-preview--moments .moment-card")).toHaveCount(1);
+  await expect(page.locator(".drop-card__id")).toHaveCount(0);
+  await expect(page.locator("video, audio")).toHaveCount(0);
+  expect(mediaRequests).toEqual([]);
+
+  const statistics = page.getByRole("region", { name: "Archive statistics" });
+  await expect(statistics.getByText("73,876", { exact: true })).toBeVisible();
+  await expect(statistics.getByText("2,016", { exact: true })).toBeVisible();
+  await expect(statistics.getByText("24,459", { exact: true })).toBeVisible();
+  await expect(statistics.getByText("6,218,154", { exact: true })).toBeVisible();
+  await expect(statistics.getByText("1,236,466", { exact: true })).toBeVisible();
+  await expect(statistics.getByText("artworks", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("73.9K", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("6.2M", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("navigation", { name: "Primary navigation" }).getByText("Lookup", {
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", {
+      name: "Drops",
+      exact: true,
+    }),
+  ).toHaveAttribute("href", "/drops");
 
   const heroHeading = page.getByRole("heading", { level: 1 });
   const heroFontSize = await heroHeading.evaluate((element) =>
@@ -61,16 +128,85 @@ test("homepage makes address and ENS lookup the primary action", async ({ page }
   );
   expect(heroFontSize).toBeLessThanOrEqual(64);
 
-  const lookupBox = await page.getByLabel("Look up a collection").boundingBox();
-  const dropSearchBox = await page.getByLabel("Search drops").boundingBox();
-  expect(lookupBox).not.toBeNull();
-  expect(dropSearchBox).not.toBeNull();
-  expect(lookupBox!.y).toBeLessThan(dropSearchBox!.y);
-
   await page.getByLabel("Look up a collection").fill("ericmwalk.eth");
   await page.getByRole("button", { name: "View collection" }).click();
   await expect(page).toHaveURL(`/address/${ADDRESS}`);
   expect(requestedName).toBe("ericmwalk.eth");
+});
+
+test("direct ENS address URLs resolve to the canonical collection URL", async ({ page }) => {
+  let requestedName = "";
+  await page.route("**/api/resolve-address?*", async (route) => {
+    requestedName = new URL(route.request().url()).searchParams.get("name") ?? "";
+    await route.fulfill({ json: { name: "poap.eth", address: ADDRESS.toUpperCase() } });
+  });
+  await mockOwnerPage(page, {
+    items: [holding(3, 1_773_705_600)],
+    nextCursor: null,
+  });
+
+  await page.goto("/address/poap.eth");
+
+  await expect(page).toHaveURL(`/address/${ADDRESS}`);
+  await expect(page.getByRole("heading", { name: "POAP collection" })).toBeVisible();
+  expect(requestedName).toBe("poap.eth");
+});
+
+test("ENS names beginning with 0x are resolved as names when they contain a dot", async ({
+  page,
+}) => {
+  let requestedName = "";
+  await page.route("**/api/resolve-address?*", async (route) => {
+    requestedName = new URL(route.request().url()).searchParams.get("name") ?? "";
+    await route.fulfill({ json: { name: "0x1234.eth", address: ADDRESS } });
+  });
+  await mockOwnerPage(page, {
+    items: [holding(3, 1_773_705_600)],
+    nextCursor: null,
+  });
+
+  await page.goto("/address/0x1234.eth");
+
+  await expect(page).toHaveURL(`/address/${ADDRESS}`);
+  expect(requestedName).toBe("0x1234.eth");
+});
+
+test("incomplete 0x paths fail locally without calling the ENS resolver", async ({ page }) => {
+  let resolverCalls = 0;
+  await page.route("**/api/resolve-address?*", async (route) => {
+    resolverCalls += 1;
+    await route.fulfill({ status: 500, json: { error: "unexpected lookup" } });
+  });
+
+  await page.goto("/address/0x1234");
+
+  await expect(page.getByRole("heading", { name: "That address is not valid" })).toBeVisible();
+  await expect(page.getByText("Use a complete 0x address or an ENS name")).toBeVisible();
+  expect(resolverCalls).toBe(0);
+});
+
+test("legacy homepage Drop searches move to the dedicated catalog", async ({ page }) => {
+  await page.goto("/?q=archive&year=2026&type=virtual&sort=popular");
+
+  await expect(page).toHaveURL("/drops?q=archive&year=2026&type=virtual&sort=popular");
+  await expect(page.getByLabel("Search drops")).toHaveValue("archive");
+  await expect(page.getByLabel("Year")).toHaveValue("2026");
+  await expect(page.getByLabel("Format")).toHaveValue("virtual");
+  await expect(page.getByLabel("Sort")).toHaveValue("popular");
+});
+
+test("the complete searchable Drop catalog lives at /drops", async ({ page }) => {
+  await page.goto("/drops");
+
+  await expect(page.getByRole("heading", { name: "Browse POAP Drops" })).toBeVisible();
+  await expect(page.getByLabel("Search drops")).toBeVisible();
+  await expect(page.getByLabel("Year")).toBeVisible();
+  await expect(page.getByLabel("Format")).toBeVisible();
+  await expect(page.getByLabel("Sort")).toBeVisible();
+  await expect(page.locator(".drop-card__id")).toHaveCount(0);
+
+  await page.getByLabel("Search drops").fill("archive");
+  await expect(page).toHaveURL("/drops?q=archive");
 });
 
 test("address page leads with the collection, exact relationships, and month groups", async ({
@@ -81,7 +217,8 @@ test("address page leads with the collection, exact relationships, and month gro
     nextCursor: null,
   });
 
-  await page.goto(`/address/${ADDRESS}`);
+  await page.goto(`/address/${ADDRESS.toUpperCase()}/`);
+  await expect(page).toHaveURL(`/address/${ADDRESS}`);
 
   await expect(page.getByRole("heading", { name: "POAP collection" })).toBeVisible();
   await expect(page.getByText("2,477", { exact: true })).toBeVisible();
@@ -105,6 +242,7 @@ test("address page leads with the collection, exact relationships, and month gro
   const firstCard = await page.locator(".owner-month .drop-card").first().boundingBox();
   expect(firstCard).not.toBeNull();
   expect(firstCard!.y).toBeLessThan(900);
+  await expect(page.locator(".drop-card__id")).toHaveCount(0);
 });
 
 test("loading another page merges holdings into the existing month", async ({ page }) => {
@@ -140,6 +278,14 @@ test("the refreshed lookup and address summary do not overflow a phone viewport"
     })),
   ).toEqual({ viewport: 390, content: 390 });
 
+  await page.goto("/drops");
+  expect(
+    await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      content: document.documentElement.scrollWidth,
+    })),
+  ).toEqual({ viewport: 390, content: 390 });
+
   await page.goto(`/address/${ADDRESS}`);
   expect(
     await page.evaluate(() => ({
@@ -147,6 +293,21 @@ test("the refreshed lookup and address summary do not overflow a phone viewport"
       content: document.documentElement.scrollWidth,
     })),
   ).toEqual({ viewport: 390, content: 390 });
+});
+
+test("the homepage lookup remains usable at the minimum supported viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.goto("/");
+
+  const layout = await page.getByLabel("Look up a collection").evaluate((input) => ({
+    inputWidth: input.getBoundingClientRect().width,
+    viewport: document.documentElement.clientWidth,
+    content: document.documentElement.scrollWidth,
+  }));
+
+  expect(layout.inputWidth).toBeGreaterThanOrEqual(120);
+  expect(layout).toMatchObject({ viewport: 320, content: 320 });
+  await expect(page.getByRole("button", { name: "View collection" })).toBeVisible();
 });
 
 async function mockOwnerPage(
@@ -239,5 +400,49 @@ function drop(dropId: number, title: string) {
     imageUrl: "/brand/logo_poap.svg",
     hasArtwork: true,
     tokenCount: 1,
+  };
+}
+
+function collection(collectionId: number, title: string) {
+  return {
+    collectionId,
+    slug: `collection-${collectionId}`,
+    title,
+    description: "A public Collection preserved for the homepage preview.",
+    type: "organization",
+    year: 2026,
+    updatedOn: "2026-07-23T00:00:00.000Z",
+    itemCount: 12,
+    sectionCount: 2,
+    logoUrl: "/brand/logo_poap.svg",
+    bannerUrl: null,
+    isFeatured: false,
+    isVerified: true,
+  };
+}
+
+function moment(momentId: string) {
+  return {
+    momentId,
+    displayId: "homepage-preview",
+    author: ADDRESS,
+    description: "A public Moment whose media must remain deferred on the homepage.",
+    createdOn: "2026-07-23T00:00:00.000Z",
+    updatedOn: null,
+    isUpdated: false,
+    sourceMediaCount: 1,
+    mediaCount: 1,
+    mediaPreservationState: "complete",
+    previewMedia: {
+      mediaId: "00000000-0000-4000-8000-000000000101",
+      kind: "video",
+      mimeType: "video/mp4",
+      url: MOMENT_MEDIA_URL,
+      thumbnailUrl: MOMENT_MEDIA_URL,
+      width: 1280,
+      height: 720,
+    },
+    dropIds: [1],
+    collectionIds: [1],
   };
 }

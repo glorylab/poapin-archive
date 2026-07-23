@@ -70,10 +70,11 @@ reviewed custom domain.
 
 ## Configure ENS resolution
 
-The homepage accepts complete `0x` addresses directly and ENS names such as
-`name.eth`. ENS names are sent to `/api/resolve-address`; the Worker resolves
-them on Ethereum mainnet through the Universal Resolver using
-`ETHEREUM_RPC_URL`. The browser never receives the RPC URL or calls the provider
+The homepage and direct paths such as `/address/name.eth` accept complete `0x`
+addresses and ENS names. ENS names are sent to `/api/resolve-address`; the
+Worker resolves them on Ethereum mainnet through the Universal Resolver using
+`ETHEREUM_RPC_URL`. A successful route is replaced with its canonical lowercase
+`0x` address. The browser never receives the RPC URL or calls the provider
 directly, and no provider API key is required by the checked-in production
 configuration.
 
@@ -272,7 +273,7 @@ npm run deploy
 
 After deployment, verify at least:
 
-- the home page and static assets;
+- the home page previews, the complete `/drops` browser, and static assets;
 - direct `0x` lookup plus a resolving and an unresolved ENS name, including the
   seven-day positive and five-minute negative edge-cache behavior of
   `/api/resolve-address`;
