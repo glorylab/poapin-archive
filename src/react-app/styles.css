@@ -4626,6 +4626,36 @@ main[tabindex="-1"]:focus,
 }
 
 @media (max-width: 410px) {
+  .personal-site-hero {
+    margin-top: 12px;
+    padding: 18px;
+    gap: 14px;
+  }
+  .personal-site-hero h1 {
+    margin: 7px 0 9px;
+    font-size: 1.7rem;
+    line-height: 1.04;
+  }
+  .personal-site-hero code {
+    font-size: 0.6rem;
+    line-height: 1.45;
+  }
+  .personal-site-hero p {
+    margin-top: 11px;
+    font-size: 0.78rem;
+    line-height: 1.55;
+  }
+  .personal-site-hero__mark {
+    min-height: 92px;
+    padding: 12px;
+  }
+  .personal-site-hero__mark span {
+    width: min(100%, 58px);
+    font-size: 0.6rem;
+  }
+  .personal-site-hero__mark strong {
+    font-size: 1rem;
+  }
   .site-header__inner {
     gap: 4px;
   }
