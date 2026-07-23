@@ -12,6 +12,7 @@
 
 - [ ] `npm run typecheck`
 - [ ] `npm test`
+- [ ] `npm run test:browser` when browser behavior changes
 - [ ] `npm run build`
 
 ## Operational and data impact

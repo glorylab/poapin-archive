@@ -31,5 +31,10 @@ stable public contract exists.
 - A responsive Collection Hub with search and filters, Collection profile and
   relationship views, public owner and approved-suggestion attribution, and
   portable segmented export controls.
+- A separately gated Moments archive with 24,459 public authored records,
+  Drop and Collection albums, address timelines, bounded exports, click-gated
+  original media, download-only DNG/HEIC files, and a media-bound D1 release.
+  The release preserves 30,548 unique R2 objects and verified every object in
+  two independent remote passes with zero failures.
 - Open-source contribution, conduct, security, licensing, architecture,
   deployment, and data-import documentation.

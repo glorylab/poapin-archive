@@ -8,7 +8,10 @@ import { BrowsePage } from "./pages/BrowsePage";
 import { CollectionPage } from "./pages/CollectionPage";
 import { CollectionsPage } from "./pages/CollectionsPage";
 import { DropPage } from "./pages/DropPage";
+import { MomentDetailPage } from "./pages/MomentDetailPage";
+import { MomentsPage } from "./pages/MomentsPage";
 import { OwnerPage } from "./pages/OwnerPage";
+import { OwnerMomentsPage } from "./pages/OwnerMomentsPage";
 import { focusHashTarget, Link, useLocation } from "./router";
 import type { ArchiveMeta } from "./types";
 import { isAbortError } from "./utils";
@@ -36,6 +39,12 @@ export default function App() {
       document.title = "POAP Collections · POAPin Archive";
     else if (location.pathname.startsWith("/collections/"))
       document.title = "POAP Collection · POAPin Archive";
+    else if (location.pathname === "/moments" || location.pathname === "/moments/")
+      document.title = "POAP Moments · POAPin Archive";
+    else if (location.pathname.startsWith("/moments/"))
+      document.title = "POAP Moment · POAPin Archive";
+    else if (/^\/owners\/[^/]+\/moments\/?$/.test(location.pathname))
+      document.title = "Created Moments · POAPin Archive";
     else if (location.pathname === "/about-data") document.title = "About the data · POAP Archive";
     else if (location.pathname.startsWith("/drop/")) document.title = "POAP drop · POAP Archive";
     else if (location.pathname.startsWith("/address/"))
@@ -80,7 +89,16 @@ export default function App() {
 function Route({ pathname, meta }: { pathname: string; meta: ArchiveMeta | null }) {
   if (pathname === "/") return <BrowsePage meta={meta} />;
   if (pathname === "/collections" || pathname === "/collections/") return <CollectionsPage />;
+  if (pathname === "/moments" || pathname === "/moments/") return <MomentsPage />;
   if (pathname === "/about-data") return <AboutPage meta={meta} />;
+
+  const momentMatch = pathname.match(
+    /^\/moments\/([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})\/?$/,
+  );
+  if (momentMatch) return <MomentDetailPage momentId={momentMatch[1].toLowerCase()} />;
+
+  const ownerMomentsMatch = pathname.match(/^\/owners\/(0x[a-fA-F0-9]{40})\/moments\/?$/);
+  if (ownerMomentsMatch) return <OwnerMomentsPage address={ownerMomentsMatch[1].toLowerCase()} />;
 
   const collectionMatch = pathname.match(/^\/collections\/([1-9]\d{0,9})\/?$/);
   if (collectionMatch) {

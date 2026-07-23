@@ -6,10 +6,10 @@ keeps resource provisioning, data publication, and code deployment explicit.
 
 ## Prerequisites
 
-- Node.js 22 or newer and npm
+- Node.js 22.13 or newer and npm
 - a Cloudflare account with the `poap.in` zone
 - a narrowly scoped Cloudflare API token or an authenticated Wrangler session
-- permission to create Workers, three D1 databases, an R2 bucket, and the custom
+- permission to create Workers, four D1 databases, an R2 bucket, and the custom
   domain
 
 Review current Cloudflare limits and pricing before importing production data.
@@ -53,6 +53,14 @@ exact activated database and projection, even if `COLLECTIONS_SNAPSHOT_ID` is
 unchanged. Never reuse a release ID after replacing the binding or published
 contents.
 
+Moments follows the same snapshot-scoped replacement model through the stricter
+four-phase loader in [Moments backup](../tools/moments-backup/README.md). Keep a
+new Moments D1 unbound while it is loaded and verified. Bind it only after
+activation, and deploy the matching `MOMENTS_RELEASE_ID`,
+`MOMENTS_SOURCE_DATABASE_SHA256`, and `MOMENTS_BUILD_MANIFEST_SHA256` together.
+The Worker compares all three database identity fields before serving a row,
+and the two digests are also part of every Moments cache namespace.
+
 Confirm that `poap.in` belongs to a zone in the same account. Wrangler is
 configured to attach it as a Worker custom domain. Glory Lab's production R2
 bucket is already bound to `media.poap.in`; forks must bind their own reviewed
@@ -80,6 +88,7 @@ migration locally before remote application:
 npx wrangler d1 migrations apply CATALOG_DB --local
 npx wrangler d1 migrations apply HOLDINGS_DB --local
 npx wrangler d1 migrations apply COLLECTIONS_DB --local
+npx wrangler d1 migrations apply MOMENTS_DB --local
 npx wrangler d1 migrations apply CATALOG_DB --remote
 npx wrangler d1 migrations apply HOLDINGS_DB --remote
 ```
@@ -91,6 +100,11 @@ bind only its exact name and UUID in a permission-restricted temporary Wrangler
 configuration, apply the three Collections migrations there, and use the
 fail-closed staging loader. The complete reusable command sequence is in
 [Collections backup](../tools/collections-backup/README.md).
+
+Likewise, never run remote Moments migrations through the active Worker
+binding. Use the exact database name and UUID with the isolated Moments loader;
+keep `moments_meta.ready=0` through verification and activate only the
+target-bound verified build.
 
 Never edit an already-applied migration. Every schema pull request must include
 forward validation and rollback guidance; a rollback may require a new forward
@@ -124,11 +138,19 @@ object has been remotely verified. Do not update the active `COLLECTIONS_DB`
 binding during staging. The public Worker fails closed while the configured
 snapshot ID and ready marker disagree.
 
+POAP Moments use a separate source-level backup and activation gate. Retain both
+byte-identical structured captures, their stability report, the generated
+Moment-to-Collection map, and both private R2 backup packages. Load bounded D1
+shards through `moments:load-d1`, and keep media rows pending until their exact
+R2 objects have passed the independent media verification workflow.
+
 ## Validate the build
 
 ```bash
 npm run typecheck
 npm test
+npx playwright install chromium
+npm run test:browser
 npm run build
 npm run check
 ```
@@ -148,14 +170,17 @@ After deployment, verify at least:
 - `/api/meta` and one page each of browse and address results;
 - `/api/collections`, one collection detail/items page, and each segmented
   collection export endpoint;
+- `/api/moments/meta`, the Moments hub, one Moment detail, one Drop album, one
+  Collection album, and one author export page;
 - an empty result and an invalid request;
 - image success and fallback behavior;
 - JSON and CSV export metadata;
 - cache headers and repeated-request behavior; and
 - observability without secrets, response bodies, or unnecessary address data.
 
-Record the Worker version, Git commit, snapshot ID, Collections release ID,
-migration state, and smoke test result in the release notes.
+Record the Worker version, Git commit, snapshot ID, Collections and Moments
+release IDs, Moments source/build digests, migration state, and smoke test
+result in the release notes.
 
 ## Cache and rollback
 

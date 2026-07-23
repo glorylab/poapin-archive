@@ -14,6 +14,12 @@ import type {
   OwnerCursor,
   OwnerQuery,
 } from "./types";
+import type {
+  MomentCursor,
+  MomentMediaKind,
+  MomentPageQuery,
+  MomentsQuery,
+} from "./moments-repository";
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
@@ -24,9 +30,14 @@ const DROP_PARAMS = new Set(["q", "year", "type", "sort", "cursor", "limit"]);
 const OWNER_PARAMS = new Set(["cursor", "limit"]);
 const COLLECTION_PARAMS = new Set(["q", "year", "type", "cursor", "limit"]);
 const COLLECTION_ITEM_PARAMS = new Set(["cursor", "limit"]);
+const MOMENT_PARAMS = new Set(["author", "drop", "collection", "media", "cursor", "limit"]);
+const MOMENT_PAGE_PARAMS = new Set(["media", "cursor", "limit"]);
 const SORTS = new Set<DropSort>(["recent", "oldest", "popular"]);
 const EVENT_TYPES = new Set<EventType>(["all", "virtual", "in-person"]);
 const COLLECTION_TYPES = new Set<CollectionType>(["all", "artist", "organization", "user"]);
+const MOMENT_MEDIA_KINDS = new Set<MomentMediaKind>(["image", "video", "audio", "other"]);
+const MOMENT_ID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const MOMENT_CURSOR_ID = /^[A-Za-z0-9-]{1,128}$/;
 
 export type ApiStatus = 400 | 404 | 413 | 503;
 
@@ -78,6 +89,72 @@ export function normalizeAddress(raw: string): string {
     throw new ApiError(400, "Enter an exact 0x-prefixed, 40-character address.");
   }
   return raw.toLowerCase();
+}
+
+export function parseMomentId(raw: string): string {
+  if (!MOMENT_ID.test(raw)) {
+    throw new ApiError(400, "Moment ID must be a complete UUID.");
+  }
+  return raw.toLowerCase();
+}
+
+export function parseMomentsQuery(
+  url: URL,
+  snapshotId: string,
+): MomentsQuery & { canonicalSearch: string } {
+  assertKnownParams(url.searchParams, MOMENT_PARAMS);
+  const rawAuthor = optionalParam(url.searchParams, "author");
+  const author = rawAuthor === null ? null : normalizeAddress(rawAuthor);
+  const dropId = parseOptionalInteger(url.searchParams, "drop", 1, 9_999_999_999);
+  const collectionId = parseOptionalInteger(url.searchParams, "collection", 1, 9_999_999_999);
+  const mediaKind = parseOptionalEnum(url.searchParams, "media", MOMENT_MEDIA_KINDS);
+  const limit = parseLimit(url.searchParams, 24);
+  const filterKey = JSON.stringify({ author, dropId, collectionId, mediaKind, limit });
+  const rawCursor = optionalParam(url.searchParams, "cursor");
+  const cursor =
+    rawCursor === null
+      ? null
+      : validateMomentCursor(decodeCursor<MomentCursor>(rawCursor), snapshotId, filterKey);
+
+  const canonical = new URLSearchParams();
+  if (author !== null) canonical.set("author", author);
+  if (dropId !== null) canonical.set("drop", String(dropId));
+  if (collectionId !== null) canonical.set("collection", String(collectionId));
+  if (mediaKind !== null) canonical.set("media", mediaKind);
+  if (cursor) canonical.set("cursor", encodeCursor(cursor));
+  canonical.set("limit", String(limit));
+  return {
+    author,
+    dropId,
+    collectionId,
+    mediaKind,
+    limit,
+    cursor,
+    filterKey,
+    canonicalSearch: canonical.toString(),
+  };
+}
+
+export function parseMomentPageQuery(
+  url: URL,
+  snapshotId: string,
+  scope: string,
+  fallbackLimit = 24,
+): MomentPageQuery & { canonicalSearch: string } {
+  assertKnownParams(url.searchParams, MOMENT_PAGE_PARAMS);
+  const mediaKind = parseOptionalEnum(url.searchParams, "media", MOMENT_MEDIA_KINDS);
+  const limit = parseLimit(url.searchParams, fallbackLimit);
+  const filterKey = JSON.stringify({ scope, mediaKind, limit });
+  const rawCursor = optionalParam(url.searchParams, "cursor");
+  const cursor =
+    rawCursor === null
+      ? null
+      : validateMomentCursor(decodeCursor<MomentCursor>(rawCursor), snapshotId, filterKey);
+  const canonical = new URLSearchParams();
+  if (mediaKind !== null) canonical.set("media", mediaKind);
+  if (cursor) canonical.set("cursor", encodeCursor(cursor));
+  canonical.set("limit", String(limit));
+  return { mediaKind, limit, cursor, filterKey, canonicalSearch: canonical.toString() };
 }
 
 export function parseDropsQuery(url: URL, snapshotId: string): DropsQuery {
@@ -230,12 +307,39 @@ export function encodeCursor(
     | OwnerCursor
     | CollectionCursor
     | CollectionItemCursor
-    | CollectionExportSegmentCursor,
+    | CollectionExportSegmentCursor
+    | MomentCursor,
 ): string {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function validateMomentCursor(
+  cursor: MomentCursor,
+  snapshotId: string,
+  filterKey: string,
+): MomentCursor {
+  if (
+    !isObject(cursor) ||
+    cursor.v !== 1 ||
+    cursor.c !== "moments" ||
+    cursor.s !== snapshotId ||
+    cursor.f !== filterKey ||
+    !Number.isInteger(cursor.p) ||
+    cursor.p < 2 ||
+    cursor.p > 10_000 ||
+    typeof cursor.k !== "string" ||
+    cursor.k.length === 0 ||
+    cursor.k.length > 64 ||
+    /[\u0000-\u001f]/.test(cursor.k) ||
+    typeof cursor.i !== "string" ||
+    !MOMENT_CURSOR_ID.test(cursor.i)
+  ) {
+    throw new ApiError(400, "Cursor does not belong to this Moments query or snapshot.");
+  }
+  return cursor;
 }
 
 function validateCollectionExportSegmentCursor(
@@ -466,6 +570,17 @@ function parseEnum<T extends string>(
 ): T {
   const raw = optionalParam(params, key);
   if (raw === null) return fallback;
+  if (!values.has(raw as T)) throw new ApiError(400, `Query parameter ${key} is invalid.`);
+  return raw as T;
+}
+
+function parseOptionalEnum<T extends string>(
+  params: URLSearchParams,
+  key: string,
+  values: ReadonlySet<T>,
+): T | null {
+  const raw = optionalParam(params, key);
+  if (raw === null) return null;
   if (!values.has(raw as T)) throw new ApiError(400, `Query parameter ${key} is invalid.`);
   return raw as T;
 }

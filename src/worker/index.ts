@@ -11,6 +11,15 @@ import {
 } from "./collections-repository";
 import { createExportResponse, MAX_SYNC_EXPORT_RECORDS } from "./exports";
 import {
+  fetchAuthorMomentExportPage,
+  fetchCollectionMoments,
+  fetchDropMoments,
+  fetchMoment,
+  fetchMoments,
+  fetchMomentsMeta,
+  momentsReleaseIdentity,
+} from "./moments-repository";
+import {
   fetchDrop,
   fetchDrops,
   fetchMeta,
@@ -29,6 +38,9 @@ import {
   parseCollectionsQuery,
   parseDropId,
   parseDropsQuery,
+  parseMomentId,
+  parseMomentPageQuery,
+  parseMomentsQuery,
   parseOwnerQuery,
 } from "./validation";
 
@@ -38,6 +50,7 @@ export const app = new Hono<AppEnv>();
 // release. Keep its cache namespace separate so old edge objects cannot bypass
 // privacy redaction while unrelated archive endpoints retain their stable key.
 const COLLECTIONS_CACHE_SCHEMA = "collections-v3";
+const MOMENTS_CACHE_SCHEMA = "moments-v2";
 
 export function collectionsApiVersion(
   bindings: Pick<Bindings, "API_CACHE_VERSION" | "COLLECTIONS_RELEASE_ID">,
@@ -50,6 +63,33 @@ export function collectionsApiVersion(
     );
   }
   return `${bindings.API_CACHE_VERSION}.${COLLECTIONS_CACHE_SCHEMA}.${bindings.COLLECTIONS_RELEASE_ID}`;
+}
+
+export function momentsApiVersion(
+  bindings: Pick<
+    Bindings,
+    | "API_CACHE_VERSION"
+    | "MOMENTS_RELEASE_ID"
+    | "MOMENTS_SNAPSHOT_ID"
+    | "MOMENTS_SOURCE_DATABASE_SHA256"
+    | "MOMENTS_BUILD_MANIFEST_SHA256"
+  >,
+): string {
+  if (!bindings.MOMENTS_RELEASE_ID) {
+    throw new ApiError(
+      503,
+      "The Moments release identifier is not configured.",
+      "moments_release_unavailable",
+    );
+  }
+  const identity = momentsReleaseIdentity(bindings);
+  return [
+    bindings.API_CACHE_VERSION,
+    MOMENTS_CACHE_SCHEMA,
+    bindings.MOMENTS_RELEASE_ID,
+    identity.sourceDatabaseSha256,
+    identity.buildManifestSha256,
+  ].join(".");
 }
 
 app.use("/api/*", async (context, next) => {
@@ -76,6 +116,189 @@ app.get("/api/meta", async (context) => {
     async () => {
       const db = context.env.CATALOG_DB.withSession("first-primary");
       return context.json(await fetchMeta(db, context.env.SNAPSHOT_ID));
+    },
+  );
+});
+
+app.get("/api/moments/meta", async (context) => {
+  assertNoQuery(new URL(context.req.url));
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: "/api/moments/meta",
+      snapshotId: context.env.MOMENTS_SNAPSHOT_ID,
+      apiVersion: momentsApiVersion(context.env),
+      edgeTtlSeconds: 2_592_000,
+      browserTtlSeconds: 300,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.MOMENTS_DB.withSession("first-primary");
+      return context.json(await fetchMomentsMeta(db, momentsReleaseIdentity(context.env)));
+    },
+  );
+});
+
+app.get("/api/moments", async (context) => {
+  const limited = await enforceRateLimit(context.env.BROWSE_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const query = parseMomentsQuery(new URL(context.req.url), context.env.MOMENTS_SNAPSHOT_ID);
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: "/api/moments",
+      canonicalSearch: query.canonicalSearch,
+      snapshotId: context.env.MOMENTS_SNAPSHOT_ID,
+      apiVersion: momentsApiVersion(context.env),
+      edgeTtlSeconds: 604_800,
+      browserTtlSeconds: 60,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.MOMENTS_DB.withSession("first-primary");
+      return context.json(
+        await fetchMoments(
+          db,
+          query,
+          momentsReleaseIdentity(context.env),
+          context.env.MEDIA_BASE_URL,
+        ),
+      );
+    },
+  );
+});
+
+app.get("/api/moments/authors/:address/export", async (context) => {
+  const limited = await enforceRateLimit(context.env.OWNER_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const author = normalizeAddress(context.req.param("address"));
+  const query = parseMomentPageQuery(
+    new URL(context.req.url),
+    context.env.MOMENTS_SNAPSHOT_ID,
+    `author-export:${author}`,
+    48,
+  );
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: `/api/moments/authors/${author}/export`,
+      canonicalSearch: query.canonicalSearch,
+      snapshotId: context.env.MOMENTS_SNAPSHOT_ID,
+      apiVersion: momentsApiVersion(context.env),
+      edgeTtlSeconds: 86_400,
+      browserTtlSeconds: 0,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.MOMENTS_DB.withSession("first-primary");
+      return context.json(
+        await fetchAuthorMomentExportPage(
+          db,
+          author,
+          query,
+          momentsReleaseIdentity(context.env),
+          context.env.MEDIA_BASE_URL,
+        ),
+      );
+    },
+  );
+});
+
+app.get("/api/moments/:id", async (context) => {
+  const limited = await enforceRateLimit(context.env.BROWSE_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  assertNoQuery(new URL(context.req.url));
+  const momentId = parseMomentId(context.req.param("id"));
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: `/api/moments/${momentId}`,
+      snapshotId: context.env.MOMENTS_SNAPSHOT_ID,
+      apiVersion: momentsApiVersion(context.env),
+      edgeTtlSeconds: 2_592_000,
+      browserTtlSeconds: 300,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.MOMENTS_DB.withSession("first-primary");
+      const moment = await fetchMoment(
+        db,
+        momentId,
+        momentsReleaseIdentity(context.env),
+        context.env.MEDIA_BASE_URL,
+      );
+      if (!moment) throw momentNotFound();
+      return context.json(moment);
+    },
+  );
+});
+
+app.get("/api/drops/:id/moments", async (context) => {
+  const limited = await enforceRateLimit(context.env.BROWSE_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const dropId = parseDropId(context.req.param("id"));
+  const query = parseMomentPageQuery(
+    new URL(context.req.url),
+    context.env.MOMENTS_SNAPSHOT_ID,
+    `drop:${dropId}`,
+  );
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: `/api/drops/${dropId}/moments`,
+      canonicalSearch: query.canonicalSearch,
+      snapshotId: context.env.MOMENTS_SNAPSHOT_ID,
+      apiVersion: momentsApiVersion(context.env),
+      edgeTtlSeconds: 604_800,
+      browserTtlSeconds: 60,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.MOMENTS_DB.withSession("first-primary");
+      return context.json(
+        await fetchDropMoments(
+          db,
+          dropId,
+          query,
+          momentsReleaseIdentity(context.env),
+          context.env.MEDIA_BASE_URL,
+        ),
+      );
+    },
+  );
+});
+
+app.get("/api/collections/:id/moments", async (context) => {
+  const limited = await enforceRateLimit(context.env.BROWSE_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const collectionId = parseCollectionId(context.req.param("id"));
+  const query = parseMomentPageQuery(
+    new URL(context.req.url),
+    context.env.MOMENTS_SNAPSHOT_ID,
+    `collection:${collectionId}`,
+  );
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: `/api/collections/${collectionId}/moments`,
+      canonicalSearch: query.canonicalSearch,
+      snapshotId: context.env.MOMENTS_SNAPSHOT_ID,
+      apiVersion: momentsApiVersion(context.env),
+      edgeTtlSeconds: 604_800,
+      browserTtlSeconds: 60,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.MOMENTS_DB.withSession("first-primary");
+      return context.json(
+        await fetchCollectionMoments(
+          db,
+          collectionId,
+          query,
+          momentsReleaseIdentity(context.env),
+          context.env.MEDIA_BASE_URL,
+        ),
+      );
     },
   );
 });
@@ -574,6 +797,10 @@ async function enforceRateLimit(limiter: RateLimit, request: Request): Promise<R
 
 function collectionNotFound(): ApiError {
   return new ApiError(404, "Collection was not found in this snapshot.", "collection_not_found");
+}
+
+function momentNotFound(): ApiError {
+  return new ApiError(404, "Moment was not found in this snapshot.", "moment_not_found");
 }
 
 function collectionExportNextPath(

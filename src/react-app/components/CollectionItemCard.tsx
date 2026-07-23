@@ -97,6 +97,10 @@ export function CollectionItemCard({
             <dt>Transfers</dt>
             <dd>{formatNullableNumber(visibleDrop.transferCount)}</dd>
           </div>
+          <div>
+            <dt>Moments</dt>
+            <dd>{formatNullableNumber(visibleDrop.momentsUploaded)}</dd>
+          </div>
         </dl>
         <div className="collection-item-card__actions">
           {imageUrl && !imageFailed ? (

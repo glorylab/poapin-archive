@@ -117,6 +117,7 @@ export class SqlShardWriter {
     await this.#write(statement);
     this.current.statementCount += 1;
     this.current.rowCount += this.pendingRows.length;
+    this.current.maxStatementByteLength = Math.max(this.current.maxStatementByteLength, byteLength);
     this.totalStatements += 1;
     this.pendingRows = [];
     this.pendingBytes = 0;
@@ -149,6 +150,7 @@ export class SqlShardWriter {
       byteLength: 0,
       rowCount: 0,
       statementCount: 0,
+      maxStatementByteLength: 0,
     };
     await this.#write(GENERATED_HEADER);
   }
@@ -165,7 +167,12 @@ export class SqlShardWriter {
     if (!this.current) return;
     const shardPath = relative(this.outputRoot, this.current.filePath).replaceAll("\\", "/");
     const payloadSha256 = this.current.payloadHash.digest("hex");
-    await this.#write(this.#journalSql({ payloadSha256 }), { payload: false });
+    const journalSql = this.#journalSql({ payloadSha256 });
+    this.current.maxStatementByteLength = Math.max(
+      this.current.maxStatementByteLength,
+      Buffer.byteLength(journalSql),
+    );
+    await this.#write(journalSql, { payload: false });
     await endWritable(this.current.stream);
     this.artifacts.push({
       path: shardPath,
@@ -174,6 +181,7 @@ export class SqlShardWriter {
       payloadSha256,
       rowCount: this.current.rowCount,
       statementCount: this.current.statementCount,
+      maxStatementByteLength: this.current.maxStatementByteLength,
       kind: "d1-sql",
       phase: "load",
       database: this.database,

@@ -2,6 +2,8 @@
 node_modules/
 dist/
 coverage/
+playwright-report/
+test-results/
 *.tsbuildinfo
 
 # Local Cloudflare state and secrets
@@ -9,6 +11,7 @@ coverage/
 .dev.vars*
 !.dev.vars.example
 tools/collections-backup/bridge/wrangler.local.jsonc
+tools/moments-media/bridge/wrangler.local.jsonc
 wrangler.*.local.jsonc
 .env*
 !.env.example

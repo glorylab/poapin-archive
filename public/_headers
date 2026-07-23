@@ -1,5 +1,5 @@
 /*
-  Content-Security-Policy: default-src 'none'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' https://media.poap.in data:; manifest-src 'self'; script-src 'self'; style-src 'self'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'none'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' https://media.poap.in data:; manifest-src 'self'; media-src https://media.poap.in; script-src 'self'; style-src 'self'; upgrade-insecure-requests
   Cross-Origin-Opener-Policy: same-origin
   Permissions-Policy: camera=(), geolocation=(), microphone=(), payment=(), usb=()
   Referrer-Policy: no-referrer
@@ -14,4 +14,7 @@
   Cache-Control: public, max-age=86400
 
 /address/*
+  X-Robots-Tag: noindex, nofollow
+
+/owners/*
   X-Robots-Tag: noindex, nofollow
