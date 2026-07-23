@@ -420,6 +420,11 @@ main[tabindex="-1"]:focus,
   font-weight: 680;
 }
 
+.lookup-input input:focus-visible {
+  outline: 0;
+  box-shadow: none !important;
+}
+
 .lookup-input input::placeholder {
   color: rgba(39, 69, 82, 0.42);
 }

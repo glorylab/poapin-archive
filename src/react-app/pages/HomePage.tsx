@@ -162,7 +162,7 @@ export function HomePage({ meta }: HomePageProps) {
         <Stat value={collectionCount} label="collections" />
         <Stat value={momentCount} label="public moments" />
         <Stat value={meta?.counts.tokens} label="POAPs held" />
-        <Stat value={meta?.counts.owners} label="addresses" />
+        <Stat value={meta?.counts.owners} label="collectors" />
       </section>
 
       <section

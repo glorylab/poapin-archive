@@ -107,6 +107,8 @@ test("homepage leads with address lookup, exact statistics, and small archive pr
   await expect(statistics.getByText("24,459", { exact: true })).toBeVisible();
   await expect(statistics.getByText("6,218,154", { exact: true })).toBeVisible();
   await expect(statistics.getByText("1,236,466", { exact: true })).toBeVisible();
+  await expect(statistics.getByText("collectors", { exact: true })).toBeVisible();
+  await expect(statistics.getByText("addresses", { exact: true })).toHaveCount(0);
   await expect(statistics.getByText("artworks", { exact: true })).toHaveCount(0);
   await expect(page.getByText("73.9K", { exact: true })).toHaveCount(0);
   await expect(page.getByText("6.2M", { exact: true })).toHaveCount(0);
@@ -128,7 +130,37 @@ test("homepage leads with address lookup, exact statistics, and small archive pr
   );
   expect(heroFontSize).toBeLessThanOrEqual(64);
 
-  await page.getByLabel("Look up a collection").fill("ericmwalk.eth");
+  const addressLookup = page.getByLabel("Look up a collection");
+  await addressLookup.focus();
+  await expect
+    .poll(() =>
+      addressLookup.evaluate(
+        (input) => getComputedStyle(input.closest(".lookup-input")!).borderColor,
+      ),
+    )
+    .toBe("rgb(224, 199, 47)");
+  const lookupFocusStyle = await addressLookup.evaluate((input) => {
+    const inputStyle = getComputedStyle(input);
+    const wrapperStyle = getComputedStyle(input.closest(".lookup-input")!);
+    return {
+      inputBoxShadow: inputStyle.boxShadow,
+      inputFocusVisible: input.matches(":focus-visible"),
+      inputOutlineStyle: inputStyle.outlineStyle,
+      inputOutlineWidth: inputStyle.outlineWidth,
+      wrapperBorderColor: wrapperStyle.borderColor,
+      wrapperBoxShadow: wrapperStyle.boxShadow,
+    };
+  });
+  expect(lookupFocusStyle).toMatchObject({
+    inputBoxShadow: "none",
+    inputFocusVisible: true,
+    inputOutlineStyle: "none",
+    inputOutlineWidth: "0px",
+    wrapperBorderColor: "rgb(224, 199, 47)",
+  });
+  expect(lookupFocusStyle.wrapperBoxShadow).not.toBe("none");
+
+  await addressLookup.fill("ericmwalk.eth");
   await page.getByRole("button", { name: "View collection" }).click();
   await expect(page).toHaveURL(`/address/${ADDRESS}`);
   expect(requestedName).toBe("ericmwalk.eth");
