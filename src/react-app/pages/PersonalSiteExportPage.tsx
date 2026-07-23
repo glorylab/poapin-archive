@@ -320,11 +320,21 @@ function DeploymentCard({
   copied: boolean;
   onCopy: () => void;
 }) {
+  const headingId = `deployment-${option.id}-heading`;
+
   return (
-    <article className={`deployment-card deployment-card--${option.id}`}>
+    <article
+      className={`deployment-card deployment-card--${option.id}`}
+      aria-labelledby={headingId}
+    >
       <div className="deployment-card__heading">
-        <span>{option.badge}</span>
-        <h3>{option.title}</h3>
+        <DeploymentBrandMark id={option.id} />
+        <div>
+          <span className="deployment-card__badge">{option.badge}</span>
+          <h3 id={headingId} translate="no">
+            {option.title}
+          </h3>
+        </div>
       </div>
       <p>{option.description}</p>
       <ol>
@@ -342,11 +352,38 @@ function DeploymentCard({
           {option.actionLabel}
           <ExternalIcon />
         </a>
-        <button className="button button--quiet" type="button" onClick={onCopy}>
+        <button
+          className="button button--quiet"
+          type="button"
+          aria-label={
+            copied ? `${option.title} prompt copied` : `Copy ${option.title} prompt for my agent`
+          }
+          aria-live="polite"
+          onClick={onCopy}
+        >
           {copied ? "Prompt copied" : "Copy for my agent"}
         </button>
       </div>
     </article>
+  );
+}
+
+function DeploymentBrandMark({ id }: { id: DeploymentOption["id"] }) {
+  const marks: Record<DeploymentOption["id"], string> = {
+    cloudflare: "☁",
+    vercel: "▲",
+    filebase: "⬡",
+    icp: "∞",
+  };
+
+  return (
+    <span
+      className={`deployment-brand-mark deployment-brand-mark--${id}`}
+      data-deployment-brand={id}
+      aria-hidden="true"
+    >
+      {marks[id]}
+    </span>
   );
 }
 
