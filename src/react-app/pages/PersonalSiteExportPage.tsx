@@ -4,7 +4,11 @@ import { personalSiteDeploymentOptions, type DeploymentOption } from "../deploym
 import { DownloadIcon, ExternalIcon } from "../icons";
 import { collectPersonalArchive, type PersonalExportProgress } from "../personal-export";
 import { buildPortableSiteFiles } from "../portable-site";
-import { createPortableSiteZip, portableSiteZipFilename } from "../portable-site-zip";
+import {
+  createPortableSiteZip,
+  portableSiteZipFilename,
+  type PortableSiteZipProgress,
+} from "../portable-site-zip";
 import { Link } from "../router";
 import type { PersonalExportManifest } from "../types";
 import { isAbortError } from "../utils";
@@ -25,6 +29,7 @@ export function PersonalSiteExportPage({ address }: { address: string }) {
   const [manifestLoading, setManifestLoading] = useState(true);
   const [phase, setPhase] = useState<ExportPhase>("idle");
   const [progress, setProgress] = useState<PersonalExportProgress | null>(null);
+  const [zipProgress, setZipProgress] = useState<PortableSiteZipProgress | null>(null);
   const [error, setError] = useState("");
   const [result, setResult] = useState<ExportResult | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -78,6 +83,7 @@ export function PersonalSiteExportPage({ address }: { address: string }) {
     controllerRef.current = controller;
     setPhase("collecting");
     setProgress(null);
+    setZipProgress(null);
     setError("");
     if (downloadUrlRef.current) URL.revokeObjectURL(downloadUrlRef.current);
     downloadUrlRef.current = null;
@@ -86,11 +92,18 @@ export function PersonalSiteExportPage({ address }: { address: string }) {
     try {
       const snapshot = await collectPersonalArchive(address, controller.signal, setProgress);
       controller.signal.throwIfAborted();
+      setProgress(null);
       setPhase("building");
       const files = await buildPortableSiteFiles(snapshot, controller.signal);
       controller.signal.throwIfAborted();
+      setZipProgress({ completedFiles: 0, totalFiles: files.size });
       setPhase("compressing");
-      const archive = await createPortableSiteZip(files, snapshot.generatedAt, controller.signal);
+      const archive = await createPortableSiteZip(
+        files,
+        snapshot.generatedAt,
+        controller.signal,
+        setZipProgress,
+      );
       controller.signal.throwIfAborted();
       const downloadUrl = URL.createObjectURL(archive.blob);
       downloadUrlRef.current = downloadUrl;
@@ -106,6 +119,7 @@ export function PersonalSiteExportPage({ address }: { address: string }) {
       if (isAbortError(cause)) {
         setPhase("idle");
         setProgress(null);
+        setZipProgress(null);
       } else {
         setError(cause instanceof Error ? cause.message : "The personal site could not be built.");
         setPhase("idle");
@@ -118,6 +132,7 @@ export function PersonalSiteExportPage({ address }: { address: string }) {
   const cancel = () => controllerRef.current?.abort();
   const active = phase !== "idle" && phase !== "complete";
   const phaseLabel = exportStatusLabel(phase, progress);
+  const phaseDetail = exportStatusDetail(phase, progress, zipProgress);
 
   return (
     <main className="personal-site-page shell" id="main-content" tabIndex={-1}>
@@ -235,16 +250,10 @@ export function PersonalSiteExportPage({ address }: { address: string }) {
         </div>
         <div className="personal-site-progress" aria-live="polite" aria-busy={active}>
           <div className="personal-site-progress__track">
-            <span style={{ width: `${stagePercent(progress, phase)}%` }} />
+            <span style={{ width: `${stagePercent(progress, zipProgress, phase)}%` }} />
           </div>
           <strong>{phaseLabel}</strong>
-          {progress?.retryAfterSeconds ? (
-            <span>Continuing in about {progress.retryAfterSeconds} seconds.</span>
-          ) : progress ? (
-            <span>{progress.detail}</span>
-          ) : (
-            <span>No archive work starts until you press the button.</span>
-          )}
+          <span>{phaseDetail}</span>
         </div>
         {error ? (
           <p className="personal-site-builder__error" role="alert">
@@ -419,9 +428,33 @@ function exportStatusLabel(phase: ExportPhase, progress: PersonalExportProgress 
   return "Ready when you are";
 }
 
-function stagePercent(progress: PersonalExportProgress | null, phase: ExportPhase): number {
+function exportStatusDetail(
+  phase: ExportPhase,
+  progress: PersonalExportProgress | null,
+  zipProgress: PortableSiteZipProgress | null,
+): string {
+  if (phase === "building") return "Creating the static viewer, data files and checksums.";
+  if (phase === "compressing" && zipProgress) {
+    return `${zipProgress.completedFiles.toLocaleString("en")} of ${zipProgress.totalFiles.toLocaleString("en")} files compressed`;
+  }
+  if (phase === "complete") return "The package is ready to download and deploy.";
+  if (phase === "collecting" && progress?.retryAfterSeconds) {
+    return `Continuing in about ${progress.retryAfterSeconds} seconds.`;
+  }
+  if (phase === "collecting" && progress) return progress.detail;
+  return "No archive work starts until you press the button.";
+}
+
+function stagePercent(
+  progress: PersonalExportProgress | null,
+  zipProgress: PortableSiteZipProgress | null,
+  phase: ExportPhase,
+): number {
   if (phase === "building") return 92;
-  if (phase === "compressing") return 97;
+  if (phase === "compressing") {
+    if (!zipProgress || zipProgress.totalFiles < 1) return 93;
+    return 93 + (zipProgress.completedFiles / zipProgress.totalFiles) * 6;
+  }
   if (phase === "complete") return 100;
   if (!progress) return 0;
   const order: Record<PersonalExportProgress["stage"], [number, number]> = {
