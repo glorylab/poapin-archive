@@ -29,9 +29,11 @@ extensions. Static assets should be content-hashed and cached immutably.
 Complete personal sites are also a client responsibility. The browser validates
 one combined export manifest, follows snapshot-bound pages, paces requests,
 builds the relative static files, hashes them, and creates the ZIP. The
-generated site's Overview reads only its local manifest; each hash-routed tab
-loads its own local JSON chunks on demand. Remote media elements are created
-only after an explicit click.
+generated site loads a compact local runtime index through a classic script;
+each hash-routed tab then loads Base64URL-wrapped JSON payloads on demand and
+verifies their byte length and SHA-256 digest before parsing them. This transport
+works both from `file://` and an HTTP static origin without duplicating the data.
+Remote media elements are created only after an explicit click.
 
 ### Hono Worker
 

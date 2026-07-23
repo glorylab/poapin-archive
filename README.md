@@ -205,7 +205,8 @@ only after a visitor explicitly asks to load it. The ZIP therefore remains
 metadata-focused and does not duplicate the R2 media archive, although its
 aggregate size still depends on the address and destination limits. It also
 includes integrity metadata and deployment prompts for Cloudflare, Vercel,
-Filebase, and ICP.
+Filebase, and ICP. After extraction, `index.html` can be opened directly without
+a local server; the same files remain deployable to an ordinary static origin.
 
 See [Portable personal-site export](docs/personal-site-export.md) for the API,
 data, packaging, media-loading, and deployment contracts. The legacy one-file

@@ -245,19 +245,22 @@ objects. Private or suppressed source records are not copied into the ZIP.
 The generated folder contains:
 
 - `index.html` and relative `assets/site.css` / `assets/site.js`;
+- `assets/archive.bootstrap.js`, a compact local runtime index;
 - `manifest.json`;
-- chunked `data/*.json` datasets;
+- chunked `data/*.data.js` Base64URL transport files whose decoded payloads are JSON;
 - `README.md` and `DEPLOY.md`; and
 - agent prompts for Cloudflare, Vercel, Filebase, and ICP.
 
 `manifest.json` records the address, three snapshot IDs, Collections and Moments
 release identities, Moments source/build digests, dataset and Drop-availability
 counts, separate authored-Moment, tagged-Moment, and owner-Capsule coverage,
-remote-media coverage, chunk paths, UTF-8 byte length, record count, and
+remote-media coverage, transport paths, UTF-8 byte length, record count, and
 SHA-256 digest of every generated file except `manifest.json` itself. Excluding
-the manifest avoids a recursive self-digest. All paths are relative, and the
-page uses hash navigation, so the same folder works at an HTTP origin, an IPFS
-root, or an asset canister without server rewrites.
+the manifest avoids a recursive self-digest. Data-file entries additionally
+record the byte length and SHA-256 digest of their decoded JSON payloads. All
+paths are relative, and the page uses hash navigation, so the same folder works
+when opened directly through `file://`, at an HTTP origin, an IPFS root, or an
+asset canister without server rewrites.
 
 Public details remain in the `drops` dataset. Every referenced ID without
 public detail appears once in the `unavailable-drop-references` dataset with
@@ -267,28 +270,34 @@ manifest's `counts.uniqueDrops` counts public Drop records, while
 The two counts describe disjoint sets; the latter never separates private from
 missing Catalog rows.
 
-Data JSON chunks are strictly smaller than 4 MiB. The complete generated folder
-contains at most 1,000 files, and every extracted file is at most 5 MiB. A
-single record that cannot fit the data-chunk envelope stops generation instead
-of producing an undeployable package. There is no separate aggregate ZIP-size
-ceiling, so browser memory and the destination's total-upload limit can still
-bound very large addresses.
+Decoded JSON chunks are strictly smaller than 3.5 MiB. Their unpadded Base64URL
+transport wrappers, the runtime index, and every other extracted file are each
+checked against the 5 MiB Cloudflare Drop limit. The complete generated folder
+contains at most 1,000 files. A single record that cannot fit the data-chunk
+envelope stops generation instead of producing an undeployable package. There
+is no separate aggregate ZIP-size ceiling, so browser memory and the
+destination's total-upload limit can still bound very large addresses.
 
-The Overview route reads only `manifest.json`. POAPs, related Collections,
-owned Collection segments, authored Moments, tagged Moments, and Capsules are
-fetched from their JSON chunks only when the visitor opens the corresponding
-tab. The Moments tab loads the three separately labelled Moment/Capsule
-datasets.
+The viewer installs a narrow local transport bridge and loads
+`assets/archive.bootstrap.js` as a classic external script. POAPs, related
+Collections, owned Collection segments, authored Moments, tagged Moments, and
+Capsules load their corresponding `.data.js` files only when the visitor opens
+the section that needs them. Each wrapper contains only a fixed callback,
+generated identifiers, and a Base64URL payload. The payload is decoded, checked
+against its expected byte length and SHA-256 digest, and only then parsed as
+JSON. It is never evaluated as code.
 
-Because those local files are read with browser `fetch()`, the extracted folder
-must be served from a static HTTP origin; opening `index.html` directly through
-`file://` is not the supported viewing path. Once hosted, the viewer needs no
-POAPin API or database.
+This transport intentionally avoids `fetch()` so an extracted package works by
+double-clicking `index.html` as well as from a static HTTP origin. In either
+mode, the viewer needs no POAPin API or database. The executable static package
+and its unsigned checksums can detect accidental corruption but do not prove
+who produced the folder; the static JavaScript files remain part of the local
+trust boundary.
 
 ## Remote media policy
 
 Artwork, Moment media, and Capsule images are not embedded in the ZIP. Their
-archived HTTPS URLs remain in the JSON, but the static viewer does not attach an
+archived HTTPS URLs remain in the decoded data, but the static viewer does not attach an
 image, video, audio, or source URL during initial rendering. It creates the
 media element only after an explicit visitor click; audio and video use
 controls, preload nothing, and do not start automatically.

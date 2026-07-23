@@ -137,10 +137,16 @@ export interface PortableSiteManifestFile {
   bytes: number;
   count: number;
   sha256: string;
+  payload?: {
+    encoding: "base64url";
+    mimeType: "application/json";
+    bytes: number;
+    sha256: string;
+  };
 }
 
 export interface PortableSiteManifest {
-  schemaVersion: "poapin-portable-site-v1";
+  schemaVersion: "poapin-portable-site-v2";
   address: string;
   generatedAt: string | null;
   generator: {
@@ -189,13 +195,28 @@ export interface PortableSiteManifest {
   deployment: {
     maxFiles: 1_000;
     maxFileBytes: 5_242_880;
-    dataChunkTargetBytes: 4_194_304;
+    dataChunkTargetBytes: 3_670_016;
   };
   integrity: {
     algorithm: "SHA-256";
     scope: "Every generated file except manifest.json";
   };
   files: PortableSiteManifestFile[];
+}
+
+export interface PortableSiteRuntimeManifest {
+  schemaVersion: "poapin-portable-runtime-v1";
+  address: string;
+  generatedAt: string | null;
+  snapshotIds: PortableSiteSnapshotIds;
+  sources: PortableSiteSources;
+  counts: PortableSiteManifest["counts"];
+  datasets: PortableSiteDatasetManifest[];
+  files: Array<
+    Pick<PortableSiteManifestFile, "path" | "count"> & {
+      payload: NonNullable<PortableSiteManifestFile["payload"]>;
+    }
+  >;
 }
 
 export interface PortableSiteFile extends PortableSiteManifestFile {

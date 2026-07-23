@@ -7,6 +7,7 @@ import {
   PORTABLE_SITE_LIMITS,
   type PortableOwnedCollectionExport,
   type PortableSiteBuild,
+  type PortableSiteRuntimeManifest,
   type PortableSiteSnapshot,
 } from "../src/react-app/portable-site";
 import type { PersonalArchiveSnapshot } from "../src/react-app/personal-export";
@@ -45,7 +46,7 @@ describe("portable personal site generator", () => {
     expect(files).toBeInstanceOf(Map);
     expect(files.get("index.html")).toBeInstanceOf(Uint8Array);
     expect(new TextDecoder().decode(files.get("manifest.json"))).toContain(
-      '"schemaVersion": "poapin-portable-site-v1"',
+      '"schemaVersion": "poapin-portable-site-v2"',
     );
   });
 
@@ -134,7 +135,7 @@ describe("portable personal site generator", () => {
       expect(file.sha256).toBe(await sha256(file.content));
     }
 
-    expect(build.manifest.integrity.scope).toContain("except manifest.json");
+    expect(build.manifest.integrity.scope).toBe("Every generated file except manifest.json");
     expect(build.manifest.files).toHaveLength(build.files.length - 1);
     for (const entry of build.manifest.files) {
       const file = byPath.get(entry.path);
@@ -168,6 +169,36 @@ describe("portable personal site generator", () => {
       knownReferencedMediaBytes: 576,
       unknownByteLengthReferences: 2,
     });
+
+    const bootstrap = byPath.get("assets/archive.bootstrap.js");
+    expect(bootstrap).toBeDefined();
+    expect(build.manifest.files.find((entry) => entry.path === bootstrap!.path)).toMatchObject(
+      toManifestEntry(bootstrap!),
+    );
+    const runtime = runtimeManifest(build);
+    expect(runtime).toMatchObject({
+      schemaVersion: "poapin-portable-runtime-v1",
+      address: build.manifest.address,
+      snapshotIds: build.manifest.snapshotIds,
+      sources: build.manifest.sources,
+      counts: build.manifest.counts,
+      datasets: build.manifest.datasets,
+    });
+    expect(runtime.files).toEqual(
+      build.manifest.datasets.flatMap((dataset) =>
+        dataset.paths.map((path) => {
+          const entry = build.manifest.files.find((candidate) => candidate.path === path);
+          return { path, count: entry?.count, payload: entry?.payload };
+        }),
+      ),
+    );
+    const checksumLines = file(build, "checksums.sha256").trim().split("\n");
+    expect(checksumLines).toEqual(
+      build.files
+        .filter((entry) => !["checksums.sha256", "manifest.json"].includes(entry.path))
+        .sort((left, right) => left.path.localeCompare(right.path))
+        .map((entry) => `${entry.sha256}  ${entry.path}`),
+    );
   });
 
   it("keeps unavailable held Drops separate while preserving their references", async () => {
@@ -182,9 +213,12 @@ describe("portable personal site generator", () => {
       uniqueDrops: 0,
       unavailableDropReferences: 2,
     });
-    expect(file(build, "data/unavailable-drop-references-0001.json")).toContain(
-      '"reason":"not-public-or-not-found"',
-    );
+    expect(dataJson(build, "data/unavailable-drop-references-0001.data.js")).toMatchObject({
+      items: [
+        { dropId: 42, reason: "not-public-or-not-found" },
+        { dropId: 404, reason: "not-public-or-not-found" },
+      ],
+    });
   });
 
   it("rejects overlapping public and unavailable Drop availability", async () => {
@@ -215,6 +249,7 @@ describe("portable personal site generator", () => {
         "index.html",
         "assets/site.css",
         "assets/site.js",
+        "assets/archive.bootstrap.js",
         "manifest.json",
         "robots.txt",
         "checksums.sha256",
@@ -224,21 +259,21 @@ describe("portable personal site generator", () => {
         "prompts/vercel.md",
         "prompts/filebase.md",
         "prompts/icp.md",
-        "data/holdings-0001.json",
-        "data/drops-0001.json",
-        "data/unavailable-drop-references-0001.json",
-        "data/collection-profiles-0001.json",
-        "data/held-drop-memberships-0001.json",
-        "data/authored-moment-associations-0001.json",
-        "data/tagged-moment-associations-0001.json",
-        "data/owned-collections-0001.json",
-        "data/owned-collection-items-0001.json",
-        "data/owned-collection-artist-drops-0001.json",
-        "data/owned-collection-suggestions-0001.json",
-        "data/owned-collection-drop-stats-0001.json",
-        "data/moments-authored-0001.json",
-        "data/moments-tagged-0001.json",
-        "data/capsules-0001.json",
+        "data/holdings-0001.data.js",
+        "data/drops-0001.data.js",
+        "data/unavailable-drop-references-0001.data.js",
+        "data/collection-profiles-0001.data.js",
+        "data/held-drop-memberships-0001.data.js",
+        "data/authored-moment-associations-0001.data.js",
+        "data/tagged-moment-associations-0001.data.js",
+        "data/owned-collections-0001.data.js",
+        "data/owned-collection-items-0001.data.js",
+        "data/owned-collection-artist-drops-0001.data.js",
+        "data/owned-collection-suggestions-0001.data.js",
+        "data/owned-collection-drop-stats-0001.data.js",
+        "data/moments-authored-0001.data.js",
+        "data/moments-tagged-0001.data.js",
+        "data/capsules-0001.data.js",
       ]),
     );
 
@@ -323,11 +358,10 @@ describe("portable personal site generator", () => {
     expect(javascript).toContain('view.addEventListener("click"');
     expect(javascript).toContain("function mountMedia(button)");
     expect(javascript).toContain('media.preload = "none"');
-
-    const routeOffset = javascript.indexOf("async function route()");
-    const datasetOffset = javascript.indexOf("async function loadChunk");
-    expect(javascript.indexOf("fetch(manifestUrl")).toBeLessThan(routeOffset);
-    expect(datasetOffset).toBeGreaterThan(routeOffset);
+    expect(javascript).not.toContain("fetch(");
+    expect(javascript).toContain('const bootstrapPath = "assets/archive.bootstrap.js"');
+    expect(javascript).toContain('loadTransport(path, "chunk")');
+    expect(javascript).toContain("failed its payload SHA-256 check");
   });
 
   it("opens on artwork-first holdings grouped by UTC mint month", async () => {
@@ -353,7 +387,7 @@ describe("portable personal site generator", () => {
     expect(css).toContain(".media-action--artwork");
   });
 
-  it("splits large datasets below 4 MiB without losing records or order", async () => {
+  it("splits large datasets below 3.5 MiB without losing records or order", async () => {
     const large = "x".repeat(1_500_000);
     const input = fixture();
     input.holdings = [holding(1, "", 1), holding(2, "", 2), holding(3, "", 3)];
@@ -371,8 +405,9 @@ describe("portable personal site generator", () => {
     const ids: number[] = [];
     for (const path of dataset?.paths ?? []) {
       const chunkFile = build.files.find((entry) => entry.path === path);
-      expect(chunkFile?.bytes).toBeLessThan(PORTABLE_SITE_LIMITS.dataChunkTargetBytes);
-      const chunk = JSON.parse(chunkFile!.content) as {
+      expect(chunkFile?.payload?.bytes).toBeLessThan(PORTABLE_SITE_LIMITS.dataChunkTargetBytes);
+      expect(chunkFile?.bytes).toBeLessThan(PORTABLE_SITE_LIMITS.maxFileBytes);
+      const chunk = dataJson(build, path) as {
         count: number;
         items: Array<{ dropId: number }>;
       };
@@ -412,8 +447,35 @@ describe("portable personal site generator", () => {
     ];
 
     await expect(buildPortableSiteFiles(input)).rejects.toThrow(
-      "too large for the 4 MiB portable data chunk target",
+      "too large for the 3.5 MiB portable data chunk target",
     );
+  });
+
+  it("keeps archived text inert inside Base64URL transport files", async () => {
+    const input = fixture();
+    input.drops[0] = holding(
+      1001,
+      '</script><script>globalThis.pwned = true</script> \u2028 \u2029 "quoted"',
+    );
+
+    const build = await buildPortableSiteBundle(input);
+    const transport = file(build, "data/drops-0001.data.js");
+    const entry = build.manifest.files.find(
+      (candidate) => candidate.path === "data/drops-0001.data.js",
+    );
+    const decoded = dataJson(build, "data/drops-0001.data.js") as {
+      items: Array<{ description: string }>;
+    };
+
+    expect(transport).not.toContain("</script>");
+    expect(transport).not.toContain("globalThis.pwned");
+    expect(transport).toMatch(/^[\s\S]*"[A-Za-z0-9_-]+"[\s\S]*$/);
+    expect(decoded.items[0]?.description).toContain("globalThis.pwned");
+    expect(entry?.payload).toMatchObject({
+      encoding: "base64url",
+      mimeType: "application/json",
+    });
+    expect(entry?.payload?.sha256).toBe(await sha256(transportJson(build, entry!.path)));
   });
 });
 
@@ -716,6 +778,39 @@ function file(build: PortableSiteBuild, path: string): string {
   const found = build.files.find((entry) => entry.path === path);
   if (!found) throw new Error(`Missing generated file: ${path}`);
   return found.content;
+}
+
+function dataJson(build: PortableSiteBuild, path: string): unknown {
+  return JSON.parse(transportJson(build, path));
+}
+
+function toManifestEntry(fileEntry: PortableSiteBuild["files"][number]) {
+  const { content: _content, ...manifestEntry } = fileEntry;
+  return manifestEntry;
+}
+
+function transportJson(build: PortableSiteBuild, path: string): string {
+  const match = file(build, path).match(
+    /__POAPIN_ARCHIVE__\.chunk\(\s*"[^"]+",\s*"([A-Za-z0-9_-]+)"\s*\);/u,
+  );
+  if (!match?.[1]) throw new Error(`Missing Base64URL payload in ${path}`);
+  const standard = match[1].replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(standard + "=".repeat((4 - (standard.length % 4)) % 4));
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
+function runtimeManifest(build: PortableSiteBuild): PortableSiteRuntimeManifest {
+  const match = file(build, "assets/archive.bootstrap.js").match(
+    /__POAPIN_ARCHIVE__\.manifest\(\s*"([A-Za-z0-9_-]+)"\s*\);/u,
+  );
+  if (!match?.[1]) throw new Error("Missing runtime manifest payload");
+  const standard = match[1].replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(standard + "=".repeat((4 - (standard.length % 4)) % 4));
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  return JSON.parse(
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+  ) as PortableSiteRuntimeManifest;
 }
 
 async function sha256(value: string): Promise<string> {
