@@ -32,7 +32,9 @@ artwork served from [`media.poap.in`](https://media.poap.in).
   Collections.
 - A Moments hub with Drop and Collection albums, authored timelines,
   bandwidth-safe detail pages, and bounded metadata exports.
-- An address view for finding and exporting the POAPs recorded for an address.
+- A homepage address lookup that accepts either a complete `0x` address or an
+  ENS name, then opens the matching preserved collection without connecting a
+  wallet.
 - A browser-built, deployable personal-site ZIP containing complete paginated
   Holdings, normalized public and unavailable Drop references, relevant
   Collection profiles and owned-Collection exports, public authored and tagged
@@ -55,12 +57,19 @@ No wallet connection is required.
 | Collections | Cloudflare D1 (`COLLECTIONS_DB`) | Curated collections, memberships, sections, and export relations      |
 | Moments     | Cloudflare D1 (`MOMENTS_DB`)     | Moments, tags, Capsules, Drop links, albums, media proof, and exports |
 | Media       | Cloudflare R2 (`ARCHIVE_BUCKET`) | Immutable original artwork; derived thumbnails may follow later       |
+| Resolver    | ENS Universal Resolver           | Server-side ENS-to-address lookup through a configurable mainnet RPC  |
 | Cache       | Workers Cache + HTTP caching     | Snapshot-versioned public GET responses and immutable media           |
 
 Splitting catalog, holdings, Collections, and Moments keeps their access
 patterns and snapshot lifecycles independent. Cache is an expendable
 acceleration layer; D1 and R2 remain the sources of served data. See
 [Architecture](docs/architecture.md) for the request and data flow.
+
+ENS resolution also stays behind the Worker. The browser sends the requested
+name to the POAPin API, while the Worker uses `ETHEREUM_RPC_URL` to call the
+Ethereum mainnet Universal Resolver. The production default is PublicNode's
+keyless public Ethereum endpoint, and operators can replace it with another
+HTTPS mainnet JSON-RPC provider without changing the client.
 
 ## Cost is a design constraint
 

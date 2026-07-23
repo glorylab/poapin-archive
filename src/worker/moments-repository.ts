@@ -278,7 +278,7 @@ const META_SQL = `
     'source_moments_count',
     'public_moments_count',
     'media_count',
-    'capsules_count'
+    'public_capsules_count'
   )`;
 
 const PUBLIC_MEDIA_PREDICATE = publicMediaPredicate("media");
@@ -348,7 +348,7 @@ export async function fetchMomentsMeta(
       sourceMoments: storedCount(meta.get("source_moments_count")),
       publicMoments: storedCount(meta.get("public_moments_count")),
       media: storedCount(meta.get("media_count")),
-      capsules: storedCount(meta.get("capsules_count")),
+      capsules: storedCount(meta.get("public_capsules_count")),
     },
   };
 }

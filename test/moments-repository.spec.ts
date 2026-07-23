@@ -57,7 +57,7 @@ describe("Moments repository", () => {
     await expect(fetchMomentsMeta(db(), RELEASE)).resolves.toEqual({
       snapshotId: SNAPSHOT_ID,
       snapshotAt: "2026-07-23T00:00:00.000Z",
-      counts: { sourceMoments: 8, publicMoments: 3, media: 5, capsules: 3 },
+      counts: { sourceMoments: 8, publicMoments: 3, media: 5, capsules: 2 },
     });
     await expect(
       fetchMomentsMeta(db(), { ...RELEASE, snapshotId: "wrong-snapshot" }),
@@ -357,11 +357,13 @@ describe("Moments HTTP API", () => {
   it("serves release-versioned metadata", async () => {
     const response = await SELF.fetch("https://poap.in/api/moments/meta");
     expect(response.status).toBe(200);
-    expect(response.headers.get("x-archive-api-version")).toBe(MOMENTS_API_VERSION);
+    expect(response.headers.get("x-archive-api-version")).toBe(
+      `${MOMENTS_API_VERSION}.public-meta-v2`,
+    );
     await expect(response.json()).resolves.toEqual({
       snapshotId: SNAPSHOT_ID,
       snapshotAt: "2026-07-23T00:00:00.000Z",
-      counts: { sourceMoments: 8, publicMoments: 3, media: 5, capsules: 3 },
+      counts: { sourceMoments: 8, publicMoments: 3, media: 5, capsules: 2 },
     });
   });
 

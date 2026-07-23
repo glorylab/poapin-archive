@@ -76,6 +76,7 @@
     "MOMENTS_BUILD_MANIFEST_SHA256": "21ef4c8ef6351b59a92210cd0ba4631c5e9ef9034ec0dd5b0ddf9ac3dd702bf3",
     "API_CACHE_VERSION": "v1",
     "MEDIA_BASE_URL": "https://media.poap.in",
+    "ETHEREUM_RPC_URL": "https://ethereum-rpc.publicnode.com",
   },
   "limits": {
     "cpu_ms": 250,

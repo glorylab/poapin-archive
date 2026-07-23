@@ -55,7 +55,7 @@ export function Header({ meta }: HeaderProps) {
             aria-current={active === "address" ? "page" : undefined}
             data-nav-optional="export"
           >
-            Export
+            Lookup
           </Link>
           <Link
             className={active === "about" ? "nav__link is-active" : "nav__link"}

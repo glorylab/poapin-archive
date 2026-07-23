@@ -4,6 +4,7 @@ import type {
   CollectionDetailResponse,
   CollectionExportManifest,
   CollectionItemsPage,
+  CollectionsMeta,
   CollectionProfilesResponse,
   CollectionSummary,
   CollectionType,
@@ -17,12 +18,14 @@ import type {
   MomentTaggedExportPage,
   MomentDetail,
   MomentMediaKind,
+  MomentsMeta,
   MomentsPageResponse,
   OwnedCollectionsPage,
   OwnerPageResponse,
   PageResponse,
   PersonalExportManifest,
   PersonalHoldingsPage,
+  AddressResolution,
 } from "./types";
 
 export class ApiError extends Error {
@@ -72,6 +75,19 @@ function parseRetryAfter(value: string | null): number | null {
 
 export function getMeta(signal?: AbortSignal) {
   return requestJson<ArchiveMeta>("/api/meta", signal);
+}
+
+export function getCollectionsMeta(signal?: AbortSignal) {
+  return requestJson<CollectionsMeta>("/api/collections/meta", signal);
+}
+
+export function getMomentsMeta(signal?: AbortSignal) {
+  return requestJson<MomentsMeta>("/api/moments/meta", signal);
+}
+
+export function resolveAddressName(name: string, signal?: AbortSignal) {
+  const params = new URLSearchParams({ name: name.trim() });
+  return requestJson<AddressResolution>(`/api/resolve-address?${params}`, signal);
 }
 
 export interface DropQuery {

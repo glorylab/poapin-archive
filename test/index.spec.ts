@@ -4,6 +4,7 @@ import { withSnapshotCache } from "../src/worker/cache";
 import {
   fetchCollectionItems,
   fetchCollections,
+  fetchCollectionsMeta,
   fetchCollectionsReadiness,
 } from "../src/worker/collections-repository";
 import { csvCell } from "../src/worker/exports";
@@ -65,6 +66,28 @@ describe("archive API", () => {
     });
   });
 
+  it("returns precomputed, release-bound Collections metadata", async () => {
+    const response = await SELF.fetch("https://poap.in/api/collections/meta");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-archive-api-version")).toBe(
+      "v1.collections-v3.collections-2026-07-22-v1-c1f9213b",
+    );
+    await expect(response.json()).resolves.toEqual({
+      snapshotId: "collections-2026-07-22-v1",
+      releaseId: "collections-2026-07-22-v1-c1f9213b",
+      snapshotAt: "2026-07-22T12:00:00.000Z",
+      count: 4,
+    });
+
+    await expect(
+      fetchCollectionsMeta(
+        bindings.COLLECTIONS_DB.withSession("first-primary"),
+        "wrong-collections-snapshot",
+        "test-release",
+      ),
+    ).rejects.toMatchObject({ code: "snapshot_mismatch" });
+  });
+
   it("uses keyset cursors and canonical R2 artwork URLs", async () => {
     const first = await SELF.fetch("https://poap.in/api/drops?limit=1");
     const firstPage = await first.json<{
@@ -118,15 +141,18 @@ describe("archive API", () => {
   it("paginates exact owner lookups without exposing address discovery", async () => {
     const first = await SELF.fetch(`https://poap.in/api/owners/${ADDRESS}?limit=1`);
     expect(first.status).toBe(200);
+    expect(first.headers.get("x-archive-api-version")).toBe("v1.owner-v2");
     const page = await first.json<{
       address: string;
       total: number;
+      uniqueDrops: number;
       items: Array<{ poapId: number; dropId: number }>;
       nextCursor: string;
     }>();
     expect(page).toMatchObject({
       address: ADDRESS,
       total: 2,
+      uniqueDrops: 2,
       items: [{ poapId: 2, dropId: 2 }],
     });
 

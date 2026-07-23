@@ -10,7 +10,8 @@ service that remains understandable to future maintainers.
 2. The browser requests a public `/api/*` resource from the Hono Worker.
 3. An eligible, snapshot-versioned response may be served from edge cache.
 4. On a miss, the Worker validates and bounds input, then queries the one D1
-   binding responsible for that dataset.
+   binding responsible for that dataset or performs the narrowly scoped
+   server-side ENS lookup.
 5. Artwork is addressed by immutable R2-backed URLs and is not transformed in
    the request.
 6. The Worker returns explicit cache, content-type, and security headers.
@@ -43,6 +44,37 @@ The Worker does not assemble a complete personal export or ZIP. It exposes
 small manifest, page, resolver, and profile responses that can be independently
 cached and retried. This prevents one large address from becoming one large
 Worker CPU, memory, or response-size event.
+
+### ENS resolution
+
+The primary homepage lookup accepts a complete `0x` address or an ENS name.
+Direct addresses are normalized in the client and require no RPC request. ENS
+names are normalized according to ENSIP-15 and sent to
+`GET /api/resolve-address?name=...`, where the Worker resolves them through the
+Ethereum mainnet Universal Resolver.
+
+`ETHEREUM_RPC_URL` is a server-side binding. The production default is
+PublicNode's keyless public Ethereum endpoint, but the resolver can use any
+HTTPS mainnet JSON-RPC endpoint. The browser receives only the normalized ENS
+name and resolved address; it never receives the provider URL or credentials,
+and the flow requires no wallet connection.
+
+Viem's optional CCIP-Read fallback is disabled. This keeps a resolver-controlled
+record from making the Worker fetch arbitrary offchain gateways or unbounded
+responses. Names that require CCIP-Read therefore fail closed instead of
+expanding the request's network and memory budget.
+
+ENS records are mutable and therefore do not use an archive snapshot namespace.
+A successful resolution is cached at the edge for seven days, while an expected
+unresolved result is cached for five minutes. Validation failures and transient
+RPC failures are not cached. The route shares the address lookup rate limiter
+and performs no automatic upstream retries, keeping provider load and Worker
+CPU bounded.
+
+The keyless default avoids a provider credential but has no project-specific
+service-level agreement. Operators can later switch `ETHEREUM_RPC_URL` to a
+dedicated provider, including Cloudflare Ethereum Gateway, without changing the
+public API or browser code.
 
 ### D1 catalog
 
@@ -216,6 +248,12 @@ Cache is safe only for deterministic public GET/HEAD responses. Cache keys must
 include the active snapshot ID plus every normalized input that changes the
 response. Do not cache errors by default, responses with `Set-Cookie`, operator
 endpoints, or future personalized/authenticated routes.
+
+ENS resolution is the deliberate snapshot-independent exception. Its cache key
+contains the normalized ENS name and API cache version. Successful resolutions
+use a seven-day edge TTL; an expected `404 ens_not_found` uses a five-minute edge
+TTL to prevent repeated misses from reaching the RPC provider. Other error
+responses are not cached.
 
 Collections additionally requires `COLLECTIONS_RELEASE_ID`, which identifies a
 specific activated D1 binding and public projection release. The Worker composes

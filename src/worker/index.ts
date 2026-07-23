@@ -6,6 +6,7 @@ import {
   fetchCollectionExportManifest,
   fetchCollectionItems,
   fetchCollectionMemberships,
+  fetchCollectionsMeta,
   fetchCollectionProfile,
   fetchCollectionProfilesBatch,
   fetchCollectionSuggestions,
@@ -13,6 +14,7 @@ import {
   fetchOwnedCollectionCount,
   fetchOwnedCollectionsPage,
 } from "./collections-repository";
+import { ethereumRpcUrl, parseEnsNameQuery, resolveEnsAddress, withEnsCache } from "./ens";
 import { createExportResponse, MAX_SYNC_EXPORT_RECORDS } from "./exports";
 import {
   fetchAuthorMomentExportPage,
@@ -66,6 +68,8 @@ export const app = new Hono<AppEnv>();
 // privacy redaction while unrelated archive endpoints retain their stable key.
 const COLLECTIONS_CACHE_SCHEMA = "collections-v3";
 const MOMENTS_CACHE_SCHEMA = "moments-v2";
+const MOMENTS_META_CACHE_SCHEMA = "public-meta-v2";
+const OWNER_CACHE_SCHEMA = "owner-v2";
 const PERSONAL_EXPORT_CACHE_SCHEMA = "personal-export-v1";
 const DROP_DETAIL_BATCH_CACHE_SCHEMA = "drop-detail-batch-v1";
 
@@ -156,6 +160,32 @@ app.get("/api/meta", async (context) => {
   );
 });
 
+app.get("/api/collections/meta", async (context) => {
+  assertNoQuery(new URL(context.req.url));
+  const apiVersion = collectionsApiVersion(context.env);
+  return withSnapshotCache(
+    {
+      requestUrl: context.req.url,
+      canonicalPath: "/api/collections/meta",
+      snapshotId: context.env.COLLECTIONS_SNAPSHOT_ID,
+      apiVersion,
+      edgeTtlSeconds: 2_592_000,
+      browserTtlSeconds: 300,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const db = context.env.COLLECTIONS_DB.withSession("first-primary");
+      return context.json(
+        await fetchCollectionsMeta(
+          db,
+          context.env.COLLECTIONS_SNAPSHOT_ID,
+          context.env.COLLECTIONS_RELEASE_ID,
+        ),
+      );
+    },
+  );
+});
+
 app.get("/api/moments/meta", async (context) => {
   assertNoQuery(new URL(context.req.url));
   return withSnapshotCache(
@@ -163,7 +193,7 @@ app.get("/api/moments/meta", async (context) => {
       requestUrl: context.req.url,
       canonicalPath: "/api/moments/meta",
       snapshotId: context.env.MOMENTS_SNAPSHOT_ID,
-      apiVersion: momentsApiVersion(context.env),
+      apiVersion: `${momentsApiVersion(context.env)}.${MOMENTS_META_CACHE_SCHEMA}`,
       edgeTtlSeconds: 2_592_000,
       browserTtlSeconds: 300,
       executionCtx: context.executionCtx,
@@ -171,6 +201,31 @@ app.get("/api/moments/meta", async (context) => {
     async () => {
       const db = context.env.MOMENTS_DB.withSession("first-primary");
       return context.json(await fetchMomentsMeta(db, momentsReleaseIdentity(context.env)));
+    },
+  );
+});
+
+app.get("/api/resolve-address", async (context) => {
+  const limited = await enforceRateLimit(context.env.OWNER_RATE_LIMITER, context.req.raw);
+  if (limited) return limited;
+  const name = parseEnsNameQuery(new URL(context.req.url));
+  const rpcUrl = ethereumRpcUrl(context.env.ETHEREUM_RPC_URL);
+  return withEnsCache(
+    {
+      requestUrl: context.req.url,
+      name,
+      apiVersion: context.env.API_CACHE_VERSION,
+      executionCtx: context.executionCtx,
+    },
+    async () => {
+      const address = await resolveEnsAddress(name, rpcUrl);
+      if (!address) {
+        return context.json(
+          { error: "ENS name did not resolve to an address.", code: "ens_not_found" },
+          404,
+        );
+      }
+      return context.json({ name, address });
     },
   );
 });
@@ -1092,7 +1147,7 @@ app.get("/api/owners/:address", async (context) => {
       canonicalPath: `/api/owners/${query.address}`,
       canonicalSearch: query.canonicalSearch,
       snapshotId: context.env.SNAPSHOT_ID,
-      apiVersion: context.env.API_CACHE_VERSION,
+      apiVersion: `${context.env.API_CACHE_VERSION}.${OWNER_CACHE_SCHEMA}`,
       edgeTtlSeconds: 86_400,
       browserTtlSeconds: 0,
       executionCtx: context.executionCtx,

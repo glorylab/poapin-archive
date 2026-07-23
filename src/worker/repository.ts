@@ -92,7 +92,7 @@ const DROP_DETAIL_SQL = `
   WHERE d.drop_id = ?1 AND d.is_private = 0`;
 
 const OWNER_STATS_SQL = `
-  SELECT token_count
+  SELECT token_count, unique_drop_count
   FROM owner_stats
   WHERE owner_address_norm = ?1`;
 
@@ -158,6 +158,7 @@ interface MetaRow {
 
 interface OwnerStatsRow {
   token_count: number;
+  unique_drop_count: number;
 }
 
 interface SnapshotIdRow {
@@ -294,7 +295,13 @@ export async function fetchOwner(
   query: OwnerQuery,
   snapshotId: string,
   mediaBaseUrl: string,
-): Promise<{ address: string; total: number; items: OwnerToken[]; nextCursor: string | null }> {
+): Promise<{
+  address: string;
+  total: number;
+  uniqueDrops: number;
+  items: OwnerToken[];
+  nextCursor: string | null;
+}> {
   const tokenStatement = query.cursor
     ? holdingsDb
         .prepare(OWNER_NEXT_PAGE_SQL)
@@ -309,7 +316,9 @@ export async function fetchOwner(
     tokenStatement,
   ]);
   assertSnapshotId((snapshotResult.results[0] as SnapshotIdRow | undefined)?.value, snapshotId);
-  const total = numeric((statsResult.results[0] as OwnerStatsRow | undefined)?.token_count);
+  const stats = statsResult.results[0] as OwnerStatsRow | undefined;
+  const total = numeric(stats?.token_count);
+  const uniqueDrops = numeric(stats?.unique_drop_count);
   const allRows = tokenResult.results as HoldingRow[];
   const hasNext = allRows.length > query.limit;
   const rows = allRows.slice(0, query.limit);
@@ -343,7 +352,7 @@ export async function fetchOwner(
           u: last.source_uid,
         })
       : null;
-  return { address: query.address, total, items, nextCursor };
+  return { address: query.address, total, uniqueDrops, items, nextCursor };
 }
 
 export async function fetchPersonalHoldingsPage(

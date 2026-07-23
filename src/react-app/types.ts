@@ -12,6 +12,29 @@ export interface ArchiveMeta {
   years: number[];
 }
 
+export interface CollectionsMeta {
+  snapshotId: string;
+  releaseId: string;
+  snapshotAt: string;
+  count: number;
+}
+
+export interface MomentsMeta {
+  snapshotId: string;
+  snapshotAt: string;
+  counts: {
+    sourceMoments: number;
+    publicMoments: number;
+    media: number;
+    capsules: number;
+  };
+}
+
+export interface AddressResolution {
+  name: string;
+  address: string;
+}
+
 export interface Drop {
   dropId: number;
   fancyId?: string | null;
@@ -64,6 +87,7 @@ export interface PageResponse<T> {
 export interface OwnerPageResponse extends PageResponse<Holding> {
   address: string;
   total: number;
+  uniqueDrops?: number;
 }
 
 export type DropSort = "recent" | "oldest" | "popular";
