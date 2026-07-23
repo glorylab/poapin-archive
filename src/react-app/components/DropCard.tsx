@@ -36,7 +36,6 @@ export function DropCard({ drop, priority = false, tokenLabel }: DropCardProps) 
               onError={() => setImageFailed(true)}
             />
           ) : null}
-          <span className="drop-card__id">#{drop.dropId}</span>
           {drop.isVirtual ? <span className="drop-card__type">Virtual</span> : null}
         </div>
 
@@ -80,7 +79,5 @@ function formatDate(value: string) {
 }
 
 function formatNumber(value: number) {
-  return new Intl.NumberFormat("en", { notation: value > 9999 ? "compact" : "standard" }).format(
-    value,
-  );
+  return new Intl.NumberFormat("en").format(value);
 }

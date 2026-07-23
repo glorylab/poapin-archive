@@ -47,9 +47,10 @@ Worker CPU, memory, or response-size event.
 
 ### ENS resolution
 
-The primary homepage lookup accepts a complete `0x` address or an ENS name.
-Direct addresses are normalized in the client and require no RPC request. ENS
-names are normalized according to ENSIP-15 and sent to
+The primary homepage lookup and direct `/address/<name>` routes accept a
+complete `0x` address or an ENS name. Direct addresses are normalized in the
+client and require no RPC request. ENS names are normalized according to
+ENSIP-15 and sent to
 `GET /api/resolve-address?name=...`, where the Worker resolves them through the
 Ethereum mainnet Universal Resolver.
 

@@ -4,16 +4,17 @@ import { Footer } from "./components/Footer";
 import { Header } from "./components/Header";
 import { EmptyState } from "./components/States";
 import { AboutPage } from "./pages/AboutPage";
-import { BrowsePage } from "./pages/BrowsePage";
+import { AddressRoutePage } from "./pages/AddressRoutePage";
 import { CollectionPage } from "./pages/CollectionPage";
 import { CollectionsPage } from "./pages/CollectionsPage";
 import { DropPage } from "./pages/DropPage";
+import { DropsPage } from "./pages/DropsPage";
+import { HomePage } from "./pages/HomePage";
 import { MomentDetailPage } from "./pages/MomentDetailPage";
 import { MomentsPage } from "./pages/MomentsPage";
-import { OwnerPage } from "./pages/OwnerPage";
 import { OwnerMomentsPage } from "./pages/OwnerMomentsPage";
 import { PersonalSiteExportPage } from "./pages/PersonalSiteExportPage";
-import { focusHashTarget, Link, useLocation } from "./router";
+import { focusHashTarget, Link, navigate, useLocation } from "./router";
 import type { ArchiveMeta } from "./types";
 import { isAbortError } from "./utils";
 
@@ -36,6 +37,8 @@ export default function App() {
 
   useEffect(() => {
     if (location.pathname === "/") document.title = "POAP Archive · POAPin";
+    else if (location.pathname === "/drops" || location.pathname === "/drops/")
+      document.title = "POAP Drops · POAPin Archive";
     else if (location.pathname === "/collections" || location.pathname === "/collections/")
       document.title = "POAP Collections · POAPin Archive";
     else if (location.pathname.startsWith("/collections/"))
@@ -83,14 +86,26 @@ export default function App() {
           Snapshot metadata is temporarily unavailable. Browsing may still work.
         </div>
       ) : null}
-      <Route pathname={location.pathname} meta={meta} />
+      <Route pathname={location.pathname} search={location.search} meta={meta} />
       <Footer meta={meta} />
     </div>
   );
 }
 
-function Route({ pathname, meta }: { pathname: string; meta: ArchiveMeta | null }) {
-  if (pathname === "/") return <BrowsePage meta={meta} />;
+function Route({
+  pathname,
+  search,
+  meta,
+}: {
+  pathname: string;
+  search: string;
+  meta: ArchiveMeta | null;
+}) {
+  if (pathname === "/") {
+    if (hasLegacyDropQuery(search)) return <LegacyDropsRedirect search={search} />;
+    return <HomePage meta={meta} />;
+  }
+  if (pathname === "/drops" || pathname === "/drops/") return <DropsPage meta={meta} />;
   if (pathname === "/collections" || pathname === "/collections/") return <CollectionsPage />;
   if (pathname === "/moments" || pathname === "/moments/") return <MomentsPage />;
   if (pathname === "/about-data") return <AboutPage meta={meta} />;
@@ -120,17 +135,50 @@ function Route({ pathname, meta }: { pathname: string; meta: ArchiveMeta | null 
     if (Number.isSafeInteger(dropId)) return <DropPage dropId={dropId} />;
   }
 
-  const ownerMatch = pathname.match(/^\/address\/(0x[a-fA-F0-9]{40})\/?$/);
-  if (ownerMatch) return <OwnerPage address={ownerMatch[1].toLowerCase()} meta={meta} />;
+  const ownerMatch = pathname.match(/^\/address\/([^/]+)\/?$/);
+  if (ownerMatch) {
+    const identifier = decodePathSegment(ownerMatch[1]);
+    if (identifier) {
+      return <AddressRoutePage identifier={identifier} pathname={pathname} meta={meta} />;
+    }
+  }
 
   return (
     <main className="not-found shell" id="main-content" tabIndex={-1}>
       <EmptyState title="This page is outside the archive">
         Check the URL or return to preserved POAP drops.
       </EmptyState>
-      <Link className="button button--gold" href="/">
-        Browse the archive
+      <Link className="button button--gold" href="/drops">
+        Browse preserved Drops
       </Link>
     </main>
   );
+}
+
+function LegacyDropsRedirect({ search }: { search: string }) {
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      navigate(`/drops${search}`, { replace: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [search]);
+
+  return (
+    <main className="not-found shell" id="main-content" tabIndex={-1}>
+      <p role="status">Opening the preserved Drops catalog…</p>
+    </main>
+  );
+}
+
+function hasLegacyDropQuery(search: string) {
+  const params = new URLSearchParams(search);
+  return ["q", "year", "type", "sort"].some((key) => params.has(key));
+}
+
+function decodePathSegment(value: string) {
+  try {
+    return decodeURIComponent(value).trim();
+  } catch {
+    return "";
+  }
 }

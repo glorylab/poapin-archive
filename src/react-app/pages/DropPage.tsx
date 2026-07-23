@@ -94,8 +94,8 @@ export function DropPage({ dropId }: { dropId: number }) {
 
   return (
     <main className="detail-page shell" id="main-content" tabIndex={-1}>
-      <Link className="back-link" href="/">
-        ← Back to the archive
+      <Link className="back-link" href="/drops">
+        ← Back to Drops
       </Link>
       <article className="drop-detail">
         <div className="drop-detail__visual">

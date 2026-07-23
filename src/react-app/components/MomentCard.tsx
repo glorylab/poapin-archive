@@ -6,9 +6,10 @@ import { isBrowserRenderableMomentImage, safeMomentMediaUrl } from "../utils";
 interface MomentCardProps {
   moment: MomentSummary;
   priority?: boolean;
+  deferMedia?: boolean;
 }
 
-export function MomentCard({ moment, priority = false }: MomentCardProps) {
+export function MomentCard({ moment, priority = false, deferMedia = false }: MomentCardProps) {
   const description = moment.description?.trim() ?? "";
   const author = moment.author;
   const authorIsAddress = typeof author === "string" && /^0x[a-fA-F0-9]{40}$/.test(author);
@@ -30,6 +31,7 @@ export function MomentCard({ moment, priority = false }: MomentCardProps) {
         sourceMediaCount={moment.sourceMediaCount}
         preservationState={moment.mediaPreservationState}
         priority={priority}
+        deferMedia={deferMedia}
       />
       <div className="moment-card__body">
         <div className="moment-card__byline">
@@ -85,6 +87,7 @@ function MomentPreview({
   sourceMediaCount,
   preservationState,
   priority,
+  deferMedia,
 }: {
   media: MomentMediaPreview | null;
   title: string;
@@ -93,6 +96,7 @@ function MomentPreview({
   sourceMediaCount: number;
   preservationState: MomentSummary["mediaPreservationState"];
   priority: boolean;
+  deferMedia: boolean;
 }) {
   const [mediaFailed, setMediaFailed] = useState(false);
   const mediaUrl = safeMomentMediaUrl(media?.url);
@@ -102,7 +106,11 @@ function MomentPreview({
     media && media.kind === "image" && !isBrowserRenderableMomentImage(media),
   );
   const previewKind =
-    media && mediaUrl && !mediaFailed ? (downloadOnlyImage ? "other" : media.kind) : null;
+    !deferMedia && media && mediaUrl && !mediaFailed
+      ? downloadOnlyImage
+        ? "other"
+        : media.kind
+      : null;
   const downloadOnlyType = downloadOnlyImage && media ? formatDownloadOnlyImageType(media) : null;
 
   return (
@@ -175,11 +183,13 @@ function MomentPreview({
         <Link className="moment-card__text" href={detailHref} aria-label={`Open ${title}`}>
           <img src="/brand/logo_poap.svg" alt="" />
           <span>
-            {media
-              ? "Media unavailable"
-              : preservationState === "pending"
-                ? "Media preservation pending"
-                : "No media attached"}
+            {deferMedia && media
+              ? "Open this Moment to choose whether to load media"
+              : media
+                ? "Media unavailable"
+                : preservationState === "pending"
+                  ? "Media preservation pending"
+                  : "No media attached"}
           </span>
         </Link>
       ) : null}

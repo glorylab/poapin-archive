@@ -72,7 +72,6 @@ export function CollectionItemCard({
             />
           </a>
         ) : null}
-        <span className="collection-item-card__id">#{visibleDrop.dropId}</span>
         {visibleDrop.featuredOn ? (
           <span className="collection-item-card__featured">Featured</span>
         ) : null}

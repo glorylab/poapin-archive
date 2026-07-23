@@ -27,14 +27,15 @@ artwork served from [`media.poap.in`](https://media.poap.in).
 
 ## What it is
 
-- A fast, read-only browser for drops in a published snapshot.
+- A focused homepage with small Drops, Collections, and public Moments
+  previews, plus a complete searchable Drops catalog at `/drops`.
 - Bounded browse, detail, and segmented export APIs for preserved POAP
   Collections.
 - A Moments hub with Drop and Collection albums, authored timelines,
   bandwidth-safe detail pages, and bounded metadata exports.
-- A homepage address lookup that accepts either a complete `0x` address or an
-  ENS name, then opens the matching preserved collection without connecting a
-  wallet.
+- Address lookup that accepts either a complete `0x` address or an ENS name,
+  including shareable paths such as `/address/poap.eth`, then opens the matching
+  preserved collection without connecting a wallet.
 - A browser-built, deployable personal-site ZIP containing complete paginated
   Holdings, normalized public and unavailable Drop references, relevant
   Collection profiles and owned-Collection exports, public authored and tagged
