@@ -245,6 +245,86 @@ test("address page leads with the collection, exact relationships, and month gro
   await expect(page.locator(".drop-card__id")).toHaveCount(0);
 });
 
+test("personal site exporter uses compact hierarchy and recognizable deployment cards", async ({
+  page,
+}) => {
+  await mockOwnerPage(page, {
+    items: [holding(30, 1_773_705_600)],
+    nextCursor: null,
+  });
+
+  await page.goto(`/address/${ADDRESS}/site`);
+
+  const heroHeading = page.getByRole("heading", {
+    level: 1,
+    name: "Turn this address into a personal POAP site.",
+  });
+  const packageHeading = page.getByRole("heading", {
+    level: 2,
+    name: "What goes into the package",
+  });
+  await expect(heroHeading).toBeVisible();
+  await expect(packageHeading).toBeVisible();
+  await expect(page.locator(".personal-site-metric")).toHaveCount(5);
+  await expect(page.getByText("2,477", { exact: true })).toBeVisible();
+  await expect(page.getByText("3,053", { exact: true })).toBeVisible();
+  await expect(page.getByText("46", { exact: true })).toBeVisible();
+  await expect(page.getByText("12", { exact: true })).toBeVisible();
+
+  const typeScale = await page.evaluate(() => ({
+    hero: Number.parseFloat(
+      getComputedStyle(document.querySelector(".personal-site-hero h1")!).fontSize,
+    ),
+    packageHeading: Number.parseFloat(
+      getComputedStyle(document.querySelector(".personal-site-summary h2")!).fontSize,
+    ),
+    metric: Number.parseFloat(
+      getComputedStyle(document.querySelector(".personal-site-metric strong")!).fontSize,
+    ),
+    cardBody: Number.parseFloat(
+      getComputedStyle(document.querySelector(".deployment-card > p")!).fontSize,
+    ),
+    cardBodyColor: getComputedStyle(document.querySelector(".deployment-card > p")!).color,
+  }));
+  expect(typeScale.hero).toBeLessThanOrEqual(56);
+  expect(typeScale.packageHeading).toBeLessThanOrEqual(34);
+  expect(typeScale.metric).toBeLessThanOrEqual(40);
+  expect(typeScale.cardBody).toBeGreaterThanOrEqual(13);
+  expect(typeScale.cardBodyColor).toBe("rgb(39, 69, 82)");
+
+  for (const brand of ["cloudflare", "vercel", "filebase", "icp"]) {
+    await expect(page.locator(`[data-deployment-brand="${brand}"]`)).toHaveCount(1);
+    await expect(page.locator(`[data-deployment-brand="${brand}"]`)).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+  }
+  await expect(page.locator(".deployment-card")).toHaveCount(4);
+  await expect(page.getByRole("link", { name: "Open Cloudflare Drop" })).toHaveAttribute(
+    "href",
+    "https://www.cloudflare.com/drop/",
+  );
+  await expect(page.getByRole("link", { name: "Open Vercel Drop" })).toHaveAttribute(
+    "href",
+    "https://vercel.com/drop",
+  );
+  await expect(
+    page.getByRole("button", { name: "Copy Cloudflare Drop prompt for my agent" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Copy Vercel Drop prompt for my agent" }),
+  ).toBeVisible();
+
+  await page.setViewportSize({ width: 320, height: 700 });
+  const mobileLayout = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    content: document.documentElement.scrollWidth,
+    heroHeight: document.querySelector(".personal-site-hero")!.getBoundingClientRect().height,
+  }));
+  expect(mobileLayout).toMatchObject({ viewport: 320, content: 320 });
+  expect(mobileLayout.heroHeight).toBeLessThan(520);
+});
+
 test("loading another page merges holdings into the existing month", async ({ page }) => {
   await mockOwnerPage(page, {
     items: [holding(30, 1_773_705_600), holding(29, 1_773_619_200)],
