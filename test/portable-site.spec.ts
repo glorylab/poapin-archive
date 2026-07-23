@@ -1,4 +1,6 @@
+import { strFromU8, unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
+import { createPortableSiteZip } from "../src/react-app/portable-site-zip";
 import {
   buildPortableSiteBundle,
   buildPortableSiteFiles,
@@ -246,6 +248,23 @@ describe("portable personal site generator", () => {
     expect(html).toContain('src="./assets/site.js"');
     expect(html).toContain('href="https://poap.in"');
     expect(html).toContain('href="https://github.com/glorylab/poapin-archive"');
+    const header = html.match(/<header\b[\s\S]*?<\/header>/)?.[0];
+    const footer = html.match(/<footer\b[\s\S]*?<\/footer>/)?.[0];
+    expect(header).toBeDefined();
+    expect(header).not.toContain("https://poap.in");
+    expect(header).not.toContain("https://github.com/glorylab/poapin-archive");
+    expect(footer).toContain('href="https://poap.in"');
+    expect(footer).toContain('href="https://github.com/glorylab/poapin-archive"');
+    expect(html.match(/href="https:\/\/poap\.in"/g)).toHaveLength(1);
+    expect(html.match(/href="https:\/\/github\.com\/glorylab\/poapin-archive"/g)).toHaveLength(1);
+    expect(html).toMatch(/<\/footer>\s*<\/div>\s*<\/body>/);
+    const css = file(build, "assets/site.css");
+    expect(css).toContain("--canvas: #4fafc1;");
+    expect(css).toContain("background-color: var(--canvas);");
+    expect(css).toContain("min-height: 100svh;");
+    expect(css).toContain("main { min-width: 0; flex: 1 0 auto; }");
+    expect(css).not.toContain("Georgia");
+    expect(css).not.toContain("#edf5f3");
     const javascript = file(build, "assets/site.js");
     expect(javascript).toContain(
       'metric("Owned Collections at snapshot", counts.ownedCollections)',
@@ -270,6 +289,26 @@ describe("portable personal site generator", () => {
       expect(file(build, prompt)).toContain("https://poap.in");
       expect(file(build, prompt)).toContain("https://github.com/glorylab/poapin-archive");
     }
+  });
+
+  it("keeps the poap.in theme and footer links inside the downloaded ZIP", async () => {
+    const files = await buildPortableSiteFiles(fixture());
+    const result = await createPortableSiteZip(
+      files,
+      "2026-07-23T00:00:00.000Z",
+      new AbortController().signal,
+    );
+    const archive = unzipSync(new Uint8Array(await result.blob.arrayBuffer()));
+    const html = strFromU8(archive["index.html"]!);
+    const css = strFromU8(archive["assets/site.css"]!);
+    const footer = html.match(/<footer\b[\s\S]*?<\/footer>/)?.[0];
+
+    expect(css).toContain("--canvas: #4fafc1;");
+    expect(css).toContain("background-image: radial-gradient");
+    expect(css).not.toContain("Georgia");
+    expect(footer).toContain('href="https://poap.in"');
+    expect(footer).toContain('href="https://github.com/glorylab/poapin-archive"');
+    expect(html).toMatch(/<\/footer>\s*<\/div>\s*<\/body>/);
   });
 
   it("keeps media dormant until a visitor clicks a load button", async () => {
