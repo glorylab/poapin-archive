@@ -29,6 +29,11 @@ extensions. Static assets should be content-hashed and cached immutably.
 Complete personal sites are also a client responsibility. The browser validates
 one combined export manifest, follows snapshot-bound pages, paces requests,
 builds the relative static files, hashes them, and creates the ZIP. The
+ZIP compressor runs in one same-origin module Worker, accepts one file at a
+time, and streams transferable output chunks back to the page. Cancellation
+terminates that Worker; an idle watchdog and sequential yielding fallback keep
+compression failures from becoming permanently pending exports. The CSP does
+not permit `blob:` Workers. The
 generated site loads a compact local runtime index through a classic script;
 each hash-routed tab then loads Base64URL-wrapped JSON payloads on demand and
 verifies their byte length and SHA-256 digest before parsing them. This transport
@@ -303,8 +308,8 @@ reads:
 The static package stores media descriptors and remote URLs, not R2 objects.
 The static viewer does not attach those URLs to media elements until a visitor
 clicks. Consequently, generating or opening the Overview has no R2 media-read
-fan-out. It needs a static HTTP origin to fetch its local manifest and chunks;
-it does not need the POAPin API after generation.
+fan-out. It runs either directly from an extracted `file://` folder or from a
+static HTTP origin and does not need the POAPin API after generation.
 
 The old CSV/JSON endpoints remain single-response exports capped at 5,000
 holdings. The personal-site flow is the complete path for larger addresses:

@@ -51,6 +51,19 @@ The browser performs the following steps:
 10. Generate a pure-static site, encode every file as UTF-8, and compress the
     files to a ZIP in the browser.
 
+ZIP creation uses one same-origin module Worker. The page transfers one
+generated file at a time; the Worker compresses files sequentially into a
+streaming ZIP and returns output chunks as transferable buffers. This avoids
+the unbounded Worker fan-out of a generic parallel ZIP helper and keeps the
+compression CPU outside the Cloudflare Worker request path. The production CSP
+permits only same-origin Workers, not `blob:` Workers.
+
+The page terminates the ZIP Worker immediately on cancellation and treats 30
+seconds without a Worker message as a failed attempt. If a dedicated Worker is
+unavailable or stops, ZIP creation restarts with the same sequential compressor
+on the main thread and yields between files. A third-party compression callback
+therefore cannot leave the export permanently pending.
+
 The collector rejects repeated cursors, paths, token identities, and Collection
 IDs. Moment identities must be unique within each authored or tagged segment;
 the same Moment may legitimately appear once in both because authorship and

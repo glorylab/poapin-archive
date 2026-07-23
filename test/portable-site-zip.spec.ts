@@ -10,10 +10,12 @@ describe("portable site ZIP", () => {
       ["index.html", encoder.encode("<!doctype html><title>POAP</title>")],
       ["data/holdings-0001.json", encoder.encode('{"items":[1,2,3]}\n')],
     ]);
+    const progress: Array<{ completedFiles: number; totalFiles: number }> = [];
     const result = await createPortableSiteZip(
       files,
       "2026-07-23T00:00:00.000Z",
       new AbortController().signal,
+      (update) => progress.push(update),
     );
     expect(result.fileCount).toBe(2);
     expect(result.uncompressedBytes).toBe(
@@ -24,6 +26,10 @@ describe("portable site ZIP", () => {
     const archive = unzipSync(new Uint8Array(await result.blob.arrayBuffer()));
     expect(Object.keys(archive).sort()).toEqual(["data/holdings-0001.json", "index.html"]);
     expect(strFromU8(archive["index.html"]!)).toContain("<title>POAP</title>");
+    expect(progress).toEqual([
+      { completedFiles: 1, totalFiles: 2 },
+      { completedFiles: 2, totalFiles: 2 },
+    ]);
   });
 
   it("rejects traversal paths and Cloudflare Drop's strict package limits", async () => {
@@ -63,5 +69,25 @@ describe("portable site ZIP", () => {
         controller.signal,
       ),
     ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("stops safely when cancellation arrives between files", async () => {
+    const controller = new AbortController();
+    const progress: number[] = [];
+    await expect(
+      createPortableSiteZip(
+        new Map([
+          ["data/one.json", encoder.encode('{"item":1}\n')],
+          ["data/two.json", encoder.encode('{"item":2}\n')],
+        ]),
+        "2026-07-23T00:00:00.000Z",
+        controller.signal,
+        ({ completedFiles }) => {
+          progress.push(completedFiles);
+          controller.abort();
+        },
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(progress).toEqual([1]);
   });
 });
