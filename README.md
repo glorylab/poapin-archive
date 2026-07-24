@@ -200,10 +200,11 @@ relationship views; complete public exports for historically owned
 Collections; separate public authored and tagged Moment views; and public
 Capsules whose archived owner is the address.
 
-Media remains remote: the generated page mounts an image, video, or audio source
-only after a visitor explicitly asks to load it. The ZIP therefore remains
-metadata-focused and does not duplicate the R2 media archive, although its
-aggregate size still depends on the address and destination limits. It also
+The deployable ZIP remains metadata-focused: its generated page mounts an image,
+video, or audio source only after a visitor explicitly asks to load it. A
+separate, opt-in browser export can download the address's deduplicated archived
+images as an image ZIP without putting those binaries into the website package.
+Video and audio are not included in that image archive. The website ZIP also
 includes integrity metadata and deployment prompts for Cloudflare, Vercel,
 Filebase, and ICP. After extraction, `index.html` can be opened directly without
 a local server; the same files remain deployable to an ordinary static origin.

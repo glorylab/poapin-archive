@@ -6,6 +6,12 @@ cacheable JSON pages; it never builds or compresses the website. This keeps a
 large export out of the Worker CPU and memory path and leaves the downloaded
 copy under the user's control.
 
+The address page also offers a separate, explicit image-archive download. It
+reuses the collected snapshot metadata but does not add image binaries to the
+deployable website ZIP. Keeping the two artifacts separate lets a visitor
+publish the lightweight static viewer, retain all matching archived images
+locally, or do both.
+
 The export describes three independently released snapshots:
 
 - the fixed Holdings and Drop archive;
@@ -320,6 +326,51 @@ rather than to the full media archive. A later visit that chooses to load media
 still reads from the configured media host. If that host is unavailable, the
 portable metadata remains readable but the remote object does not.
 
+## Separate image archive
+
+The image archive is an independent browser-side ZIP, not a hidden expansion of
+the deployable website package. It includes the eligible archived image objects
+referenced by the address's public Holdings, Collections, Moments, links, and
+Capsules. Repeated references to one immutable R2 object produce one binary in
+the ZIP, with the relationship metadata retained in the image manifest. Video,
+audio, unverified media, arbitrary external URLs, and redacted or unavailable
+Drop artwork are excluded.
+
+Preparing the list does not request image bytes. A second explicit visitor
+action starts the download; no image archive runs on page load and no media is
+autoplayed. The browser reads approved immutable objects directly from
+`https://media.poap.in` and creates the ZIP on the visitor's device. The
+Cloudflare Worker therefore does not proxy, buffer, or compress those binaries.
+The visitor still needs enough local storage and downstream bandwidth for the
+selected address, and closing or cancelling the browser operation stops the
+archive.
+
+Current desktop Chrome and Edge can stream ZIP chunks directly to the file the
+visitor selects. Browsers without the File System Access save picker use a
+fail-closed in-memory fallback capped at 256 MiB; the UI asks the visitor to
+switch browsers before a known archive exceeds that bound. The current
+single-file ZIP format accepts at most 65,532 images and must remain below 4 GiB.
+If an unknown-size object crosses either bound, the operation aborts without
+presenting a partial archive as complete.
+
+Every downloaded image receives an observed SHA-256 in
+`media-manifest.json`. Content-addressed Collection and Moment objects must
+match the SHA-256 encoded in their immutable R2 path before the ZIP can
+complete. Numeric POAP artwork paths do not publish a source digest, so their
+newly observed digest is recorded for later verification.
+
+Production requires both sides of browser cross-origin access:
+
+- the `poap.in` Content Security Policy must allow `connect-src
+https://media.poap.in`; and
+- the production R2 bucket must apply `config/r2-cors.json`, which grants only
+  `https://poap.in` read access through `GET` and `HEAD`.
+
+Do not replace the exact origin with `*`, add write methods, or add local
+development origins to the production policy. After changing an R2 CORS policy,
+purge cached responses for `media.poap.in` before smoke-testing because an
+already-cached object can retain the previous response headers.
+
 ## Legacy downloads versus the paginated export
 
 The original endpoints remain available:
@@ -410,5 +461,11 @@ Before exposing the personal-site control in production:
   data chunks or remote media;
 - verify that each tab loads only its declared chunks and media remains idle
   until clicked; and
+- apply the checked-in R2 CORS policy, purge the `media.poap.in` hostname cache,
+  and require a known object requested with `Origin: https://poap.in` to return
+  `Access-Control-Allow-Origin: https://poap.in`;
+- build a separate image archive with duplicate references, raw HEIC/DNG
+  images, and image/video/audio Moments; require one copy per image object and
+  no video or audio entry; and
 - cancel collection and ZIP creation at several stages to confirm no partial
   download is presented as complete.

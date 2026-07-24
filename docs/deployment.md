@@ -68,6 +68,46 @@ media domain before publishing `MEDIA_BASE_URL`. Keep the bucket's public
 `r2.dev` development URL disabled so artwork is exposed only through the
 reviewed custom domain.
 
+## Configure browser media access
+
+The optional image-archive download runs in the visitor's browser and reads
+immutable originals directly from `media.poap.in`. It does not proxy image
+bytes through the Worker. Production therefore needs the checked-in CSP and the
+R2 bucket CORS policy to agree on the two exact origins.
+
+Apply and then inspect the production policy:
+
+```bash
+npx wrangler r2 bucket cors set poapin-archive --file config/r2-cors.json
+npx wrangler r2 bucket cors list poapin-archive
+```
+
+`config/r2-cors.json` allows only the exact `https://poap.in` origin and only
+`GET`/`HEAD`. It exposes response metadata used for progress and integrity
+checks. Do not broaden it to `*`, add write methods, or add localhost origins to
+the production bucket. Local browser development should stub the immutable
+media responses or use a separately configured non-production bucket.
+
+An R2 custom domain automatically emits CORS response headers for valid
+cross-origin requests after the bucket policy is active. Existing cached
+objects do not acquire newly configured CORS headers automatically, so purge
+the cache for the `media.poap.in` hostname after every CORS-policy change. Use
+Cloudflare's [purge by hostname](https://developers.cloudflare.com/cache/how-to/purge-cache/purge-by-hostname/)
+operation rather than purging unrelated `poap.in` content.
+
+Allow the policy to propagate, then send an origin-bearing request to a known
+immutable object:
+
+```bash
+curl --head --header "Origin: https://poap.in" \
+  https://media.poap.in/snapshots/2026-07-02-v1/artwork/1.webp
+```
+
+Require `Access-Control-Allow-Origin: https://poap.in` in the response. A plain
+request without an `Origin` header is not a CORS test and is not expected to
+return that header. Also test one real browser-side image ZIP before declaring
+the deployment healthy.
+
 ## Configure ENS resolution
 
 The homepage and direct paths such as `/address/name.eth` accept complete `0x`
@@ -298,6 +338,12 @@ After deployment, verify at least:
   `unavailable-drop-references` jointly cover all packaged Drop references,
   confirm `counts.unavailableDropReferences`, and confirm no remote image,
   video, or audio request occurs before a media click;
+- the separate browser-built image ZIP: confirm duplicate image URLs become one
+  binary, image bytes are intact, video/audio are absent, cancellation is
+  clean, and the Worker does not proxy R2 media;
+- an origin-bearing `GET` or `HEAD` to one cached
+  `https://media.poap.in` object, requiring
+  `Access-Control-Allow-Origin: https://poap.in` after the hostname purge;
 - an empty result and an invalid request;
 - image success and fallback behavior;
 - identical ID-only output for deliberately private and missing Drop-detail
