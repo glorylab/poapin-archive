@@ -36,5 +36,10 @@ stable public contract exists.
   original media, download-only DNG/HEIC files, and a media-bound D1 release.
   The release preserves 30,548 unique R2 objects and verified every object in
   two independent remote passes with zero failures.
+- A separate, explicit personal image archive that deduplicates every related
+  public POAP, Collection, Moment, link-preview, and Capsule image, validates
+  immutable R2 paths, response metadata, and content-addressed SHA-256 values,
+  and writes a bounded STORE-only ZIP in the visitor's browser without proxying
+  media through the Worker.
 - Open-source contribution, conduct, security, licensing, architecture,
   deployment, and data-import documentation.

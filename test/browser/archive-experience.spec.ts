@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { expect, test, type Page } from "@playwright/test";
 
 const ADDRESS = "0x17470261d36fd5f3c6d19e750f6f6f7b389df357";
@@ -280,6 +282,11 @@ test("address page leads with the collection, exact relationships, and month gro
 test("personal site exporter uses compact hierarchy and recognizable deployment cards", async ({
   page,
 }) => {
+  const mediaRequests: string[] = [];
+  await page.route("https://media.poap.in/**", async (route) => {
+    mediaRequests.push(route.request().url());
+    await route.abort();
+  });
   await mockOwnerPage(page, {
     items: [holding(30, 1_773_705_600)],
     nextCursor: null,
@@ -297,6 +304,12 @@ test("personal site exporter uses compact hierarchy and recognizable deployment 
   });
   await expect(heroHeading).toBeVisible();
   await expect(packageHeading).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 2, name: "Download your archived images" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Prepare image archive" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save all images ZIP" })).toHaveCount(0);
+  expect(mediaRequests).toEqual([]);
   await expect(page.locator(".personal-site-metric")).toHaveCount(5);
   await expect(page.getByText("2,477", { exact: true })).toBeVisible();
   await expect(page.getByText("3,053", { exact: true })).toBeVisible();
@@ -355,6 +368,115 @@ test("personal site exporter uses compact hierarchy and recognizable deployment 
   }));
   expect(mobileLayout).toMatchObject({ viewport: 320, content: 320 });
   expect(mobileLayout.heroHeight).toBeLessThan(520);
+});
+
+test("image archive preparation stays media-idle and Save builds the complete ZIP", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "showSaveFilePicker", {
+      configurable: true,
+      value: undefined,
+    });
+  });
+  const mediaRequests: string[] = [];
+  const { imageUrl, imageBytes } = await mockMinimalImageArchive(page);
+  await page.route(imageUrl, async (route) => {
+    mediaRequests.push(route.request().url());
+    await route.fulfill({
+      status: 200,
+      body: imageBytes,
+      headers: {
+        "Access-Control-Allow-Origin": "http://127.0.0.1:4173",
+        "Content-Length": String(imageBytes.byteLength),
+        "Content-Type": "image/png",
+        ETag: '"browser-test"',
+      },
+    });
+  });
+
+  await page.goto(`/address/${ADDRESS}/site`);
+  await page.getByRole("button", { name: "Prepare image archive" }).click();
+
+  await expect(page.getByText("1 unique images", { exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByRole("button", { name: "Save all images ZIP" })).toBeEnabled();
+  await expect(page.getByRole("progressbar", { name: "Image archive progress" })).toHaveAttribute(
+    "aria-valuenow",
+    "100",
+  );
+  expect(mediaRequests).toEqual([]);
+
+  await page.getByRole("button", { name: "Save all images ZIP" }).click();
+
+  await expect(page.getByText("Your image ZIP is ready.", { exact: true })).toBeVisible();
+  expect(mediaRequests).toEqual([imageUrl]);
+  const download = page.getByRole("link", { name: "Download image ZIP" });
+  await expect(download).toHaveAttribute("href", /^blob:/);
+  await expect(download).toHaveAttribute("download", "poapin-all-images-0x174702-9df357.zip");
+});
+
+test("image archive streams to a native file destination when the browser supports it", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const testWindow = window as typeof window & {
+      __imageArchiveSave?: { bytes: number; closed: boolean; suggestedName: string };
+      showSaveFilePicker?: (options: { suggestedName: string }) => Promise<{
+        createWritable(): Promise<WritableStream<Uint8Array>>;
+      }>;
+    };
+    testWindow.showSaveFilePicker = async ({ suggestedName }) => ({
+      async createWritable() {
+        testWindow.__imageArchiveSave = { bytes: 0, closed: false, suggestedName };
+        return new WritableStream<Uint8Array>({
+          write(chunk) {
+            testWindow.__imageArchiveSave!.bytes += chunk.byteLength;
+          },
+          close() {
+            testWindow.__imageArchiveSave!.closed = true;
+          },
+        });
+      },
+    });
+  });
+  const { imageUrl, imageBytes } = await mockMinimalImageArchive(page);
+  await page.route(imageUrl, (route) =>
+    route.fulfill({
+      status: 200,
+      body: imageBytes,
+      headers: {
+        "Access-Control-Allow-Origin": "http://127.0.0.1:4173",
+        "Content-Length": String(imageBytes.byteLength),
+        "Content-Type": "image/png",
+      },
+    }),
+  );
+
+  await page.goto(`/address/${ADDRESS}/site`);
+  await page.getByRole("button", { name: "Prepare image archive" }).click();
+  await expect(page.getByText("1 unique images", { exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
+  await page.getByRole("button", { name: "Save all images ZIP" }).click();
+
+  await expect(page.getByText("Your image ZIP was saved.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Download image ZIP" })).toHaveCount(0);
+  const saved = await page.evaluate(
+    () =>
+      (
+        window as typeof window & {
+          __imageArchiveSave?: { bytes: number; closed: boolean; suggestedName: string };
+        }
+      ).__imageArchiveSave,
+  );
+  expect(saved).toEqual({
+    bytes: expect.any(Number),
+    closed: true,
+    suggestedName: "poapin-all-images-0x174702-9df357.zip",
+  });
+  expect(saved!.bytes).toBeGreaterThan(imageBytes.byteLength);
 });
 
 test("loading another page merges holdings into the existing month", async ({ page }) => {
@@ -489,6 +611,176 @@ async function mockOwnerPage(
       },
     }),
   );
+}
+
+async function mockMinimalImageArchive(
+  page: Page,
+): Promise<{ imageUrl: string; imageBytes: Buffer }> {
+  const snapshots = {
+    holdings: "2026-07-02-v1",
+    collections: "collections-2026-07-23-v1",
+    moments: "moments-2026-07-23-v1",
+  };
+  const sourceDatabaseSha256 = "a".repeat(64);
+  const buildManifestSha256 = "b".repeat(64);
+  const imageBytes = Buffer.from("archived-image");
+  const imageSha256 = createHash("sha256").update(imageBytes).digest("hex");
+  const imageUrl =
+    `https://media.poap.in/snapshots/${snapshots.moments}/moments/original/` +
+    `sha256/${imageSha256.slice(0, 2)}/${imageSha256}.png`;
+  const release = {
+    snapshotId: snapshots.moments,
+    releaseId: "moments-2026-07-23-r1",
+    sourceDatabaseSha256,
+    buildManifestSha256,
+  };
+
+  await page.route(`**/api/owners/${ADDRESS}/export/manifest`, (route) =>
+    route.fulfill({
+      json: {
+        schemaVersion: "poapin-personal-export-v1",
+        address: ADDRESS,
+        snapshots,
+        sources: {
+          holdings: { snapshotId: snapshots.holdings },
+          collections: {
+            snapshotId: snapshots.collections,
+            releaseId: "collections-2026-07-23-r1",
+          },
+          moments: release,
+        },
+        counts: {
+          holdings: 0,
+          authoredMoments: 1,
+          taggedMoments: 0,
+          ownedCollections: 0,
+          ownedCapsules: 0,
+        },
+        segments: {
+          holdings: {
+            path: `/api/owners/${ADDRESS}/export/holdings?limit=480`,
+            pageSize: 480,
+          },
+          ownedCollections: {
+            path: `/api/collections/owners/${ADDRESS}/export?limit=48`,
+            pageSize: 48,
+          },
+          moments: {
+            path: `/api/moments/authors/${ADDRESS}/export?limit=48`,
+            pageSize: 48,
+          },
+          taggedMoments: {
+            path: `/api/moments/tags/${ADDRESS}/export?limit=48`,
+            pageSize: 48,
+          },
+          ownedCapsules: {
+            path: `/api/capsules/owners/${ADDRESS}/export?limit=48`,
+            pageSize: 48,
+          },
+        },
+      },
+    }),
+  );
+  await page.route(`**/api/owners/${ADDRESS}/export/holdings?*`, (route) =>
+    route.fulfill({
+      json: {
+        schemaVersion: "poapin-personal-holdings-page-v1",
+        snapshotId: snapshots.holdings,
+        address: ADDRESS,
+        total: 0,
+        items: [],
+        drops: [],
+        unavailableDropIds: [],
+        nextCursor: null,
+      },
+    }),
+  );
+  await page.route(`**/api/moments/authors/${ADDRESS}/export?*`, (route) =>
+    route.fulfill({
+      json: {
+        schemaVersion: "poapin-moment-author-export-v1",
+        ...release,
+        author: ADDRESS,
+        items: [imageMoment(imageUrl, imageBytes.byteLength)],
+        nextCursor: null,
+      },
+    }),
+  );
+  await page.route(`**/api/moments/tags/${ADDRESS}/export?*`, (route) =>
+    route.fulfill({
+      json: {
+        schemaVersion: "poapin-moment-tagged-export-v1",
+        ...release,
+        address: ADDRESS,
+        items: [],
+        nextCursor: null,
+      },
+    }),
+  );
+  await page.route(`**/api/capsules/owners/${ADDRESS}/export?*`, (route) =>
+    route.fulfill({
+      json: {
+        schemaVersion: "poapin-capsule-owner-export-v1",
+        ...release,
+        address: ADDRESS,
+        items: [],
+        nextCursor: null,
+      },
+    }),
+  );
+  await page.route(`**/api/collections/owners/${ADDRESS}/export?*`, (route) =>
+    route.fulfill({
+      json: {
+        schemaVersion: "poapin-owned-collections-page-v1",
+        snapshotId: snapshots.collections,
+        releaseId: "collections-2026-07-23-r1",
+        address: ADDRESS,
+        items: [],
+        nextCursor: null,
+      },
+    }),
+  );
+  return { imageUrl, imageBytes };
+}
+
+function imageMoment(imageUrl: string, byteLength: number) {
+  const previewMedia = {
+    mediaId: "00000000-0000-4000-8000-000000000201",
+    kind: "image",
+    mimeType: "image/png",
+    url: imageUrl,
+    thumbnailUrl: null,
+    width: 16,
+    height: 16,
+  };
+  return {
+    momentId: "00000000-0000-4000-8000-000000000202",
+    displayId: "image-archive-test",
+    author: ADDRESS,
+    description: "A browser-side image archive fixture.",
+    createdOn: "2026-07-23T00:00:00.000Z",
+    updatedOn: null,
+    isUpdated: false,
+    sourceMediaCount: 1,
+    mediaCount: 1,
+    mediaPreservationState: "complete",
+    previewMedia,
+    dropIds: [],
+    collectionIds: [],
+    cid: null,
+    tokenId: null,
+    media: [
+      {
+        ...previewMedia,
+        byteLength,
+        durationMs: null,
+        position: 0,
+      },
+    ],
+    links: [],
+    userTags: [],
+    capsules: [],
+  };
 }
 
 function holding(dropId: number, mintedOn: number | null) {

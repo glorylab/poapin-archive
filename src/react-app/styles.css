@@ -4091,6 +4091,182 @@ main[tabindex="-1"]:focus,
   font-size: 0.7rem;
 }
 
+.personal-image-archive {
+  display: grid;
+  margin-top: 30px;
+  overflow: hidden;
+  border: 1px solid rgba(39, 69, 82, 0.16);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(circle at 90% 8%, rgba(224, 199, 47, 0.16), transparent 31%),
+    linear-gradient(145deg, rgba(231, 250, 247, 0.94), rgba(255, 255, 255, 0.78));
+  padding: clamp(24px, 4vw, 40px);
+  gap: 18px;
+  box-shadow: 0 18px 48px rgba(24, 55, 65, 0.1);
+}
+
+.personal-image-archive__intro {
+  display: grid;
+  gap: 10px;
+}
+
+.personal-image-archive__intro h2 {
+  margin: 8px 0 0;
+  color: var(--deep);
+  font-size: clamp(1.55rem, 3vw, 2.25rem);
+  letter-spacing: -0.04em;
+}
+
+.personal-image-archive__intro > p {
+  max-width: 720px;
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.79rem;
+  line-height: 1.68;
+}
+
+.personal-image-plan {
+  display: grid;
+  border: 1px solid rgba(39, 69, 82, 0.12);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.66);
+  padding: 16px 18px;
+  gap: 14px;
+}
+
+.personal-image-plan > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.personal-image-plan strong {
+  color: var(--deep);
+  font-size: 0.92rem;
+}
+
+.personal-image-plan span {
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.personal-image-plan__breakdown {
+  display: flex;
+  margin: 0;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.personal-image-plan__breakdown > div {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  border: 1px solid rgba(92, 90, 160, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 5px 10px;
+  gap: 6px;
+}
+
+.personal-image-plan__breakdown dt,
+.personal-image-plan__breakdown dd {
+  margin: 0;
+  font-size: 0.72rem;
+}
+
+.personal-image-plan__breakdown dt {
+  color: var(--ink-soft);
+}
+
+.personal-image-plan__breakdown dd {
+  color: var(--poap);
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.personal-image-archive__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.personal-image-progress {
+  display: grid;
+  gap: 6px;
+}
+
+.personal-image-progress__track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(39, 69, 82, 0.1);
+}
+
+.personal-image-progress__track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--poap), var(--gold));
+  transition: width 220ms ease;
+}
+
+.personal-image-progress strong {
+  margin-top: 6px;
+  color: var(--deep);
+  font-size: 0.78rem;
+}
+
+.personal-image-progress > span {
+  overflow-wrap: anywhere;
+  color: var(--ink-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.personal-image-archive__error {
+  margin: 0;
+  border-left: 3px solid #af3f55;
+  padding: 8px 14px;
+  color: #713044;
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+
+.personal-image-result {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(39, 128, 112, 0.22);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.7);
+  padding: 16px 18px;
+  gap: 12px;
+}
+
+.personal-image-result > div {
+  display: grid;
+  gap: 4px;
+}
+
+.personal-image-result > .button {
+  align-self: flex-start;
+}
+
+.personal-image-result strong {
+  color: var(--deep);
+}
+
+.personal-image-result span,
+.personal-image-archive__note {
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.personal-image-archive__note {
+  margin: 0;
+}
+
 .personal-site-deploy__lead {
   max-width: 520px;
   color: var(--deep);
@@ -4350,6 +4526,22 @@ main[tabindex="-1"]:focus,
   .personal-site-policy {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .personal-image-archive__intro {
+    grid-template-columns: minmax(0, 0.85fr) minmax(320px, 1.15fr);
+    align-items: end;
+  }
+  .personal-image-plan {
+    grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr);
+    align-items: center;
+  }
+  .personal-image-plan__breakdown {
+    justify-content: flex-end;
+  }
+  .personal-image-result {
+    align-items: center;
+    flex-direction: row;
+    justify-content: space-between;
+  }
   .deployment-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -4561,6 +4753,7 @@ main[tabindex="-1"]:focus,
     min-height: 108px;
   }
   .personal-site-builder__actions .button,
+  .personal-image-archive__actions .button,
   .deployment-card__actions .button {
     width: 100%;
   }
