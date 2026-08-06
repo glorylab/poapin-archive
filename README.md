@@ -216,28 +216,65 @@ running the public Worker.
 ## Public data releases and downloads
 
 The [archive-data-2026-08-06 release](https://github.com/glorylab/poapin-archive/releases/tag/archive-data-2026-08-06)
-publishes the directly reusable public packages. Every package contains its
-own schema, source metadata, checksums, and restore-oriented D1 SQL where
-applicable. The release is split by dataset so a mirror can download only what
-it needs.
+is the release index. The actual public data objects live in the R2
+`media.poap.in/releases/archive-data-2026-08-06/` prefix, so the multi-gigabyte
+backups do not need to be duplicated in GitHub.
+Every package contains its own schema, source metadata, checksums, and
+restore-oriented D1 SQL where applicable. The
+[machine-readable release manifest](https://media.poap.in/releases/archive-data-2026-08-06/poapin-release-manifest.json)
+lists every R2 object and its direct download URL.
 
-| Package                                           | Download                                                                                                                                                                          |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Original POAP Archive ZIP                         | [archive.zip](https://downloads.poaparchive.com/archive.zip)                                                                                                                      |
-| Compass Holdings SQLite + D1 package              | [poapin-holdings-2026-07-28-v1.tar.gz](https://github.com/glorylab/poapin-archive/releases/download/archive-data-2026-08-06/poapin-holdings-2026-07-28-v1.tar.gz)                 |
-| Holdings artwork D1 activation and coverage proof | [poapin-holdings-artwork-2026-07-28-v1.tar.gz](https://github.com/glorylab/poapin-archive/releases/download/archive-data-2026-08-06/poapin-holdings-artwork-2026-07-28-v1.tar.gz) |
-| Collections public restore package                | [poapin-collections-2026-07-22-v1-full.tar.gz](https://github.com/glorylab/poapin-archive/releases/download/archive-data-2026-08-06/poapin-collections-2026-07-22-v1-full.tar.gz) |
-| Collections complete source/media backup          | [27-part backup and manifest](https://github.com/glorylab/poapin-archive/releases/tag/archive-data-2026-08-06)                                                                    |
-| Moments structured snapshot, pass 1               | [poapin-moments-2026-07-23-v1-pass1.tar.gz](https://github.com/glorylab/poapin-archive/releases/download/archive-data-2026-08-06/poapin-moments-2026-07-23-v1-pass1.tar.gz)       |
-| Moments structured snapshot, independent pass 2   | [poapin-moments-2026-07-23-v1-pass2.tar.gz](https://github.com/glorylab/poapin-archive/releases/download/archive-data-2026-08-06/poapin-moments-2026-07-23-v1-pass2.tar.gz)       |
-| Release checksums and machine-readable manifest   | [release assets](https://github.com/glorylab/poapin-archive/releases/tag/archive-data-2026-08-06)                                                                                 |
+| Package                                           | Download                                                                                                                                            |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Original POAP Archive ZIP                         | [archive.zip](https://downloads.poaparchive.com/archive.zip)                                                                                        |
+| Compass Holdings SQLite + D1 package              | [4-part R2 backup manifest](https://media.poap.in/releases/archive-data-2026-08-06/poapin-holdings-2026-07-28-v1.manifest.json)                     |
+| Holdings artwork D1 activation and coverage proof | [poapin-holdings-artwork-2026-07-28-v1.tar.gz](https://media.poap.in/releases/archive-data-2026-08-06/poapin-holdings-artwork-2026-07-28-v1.tar.gz) |
+| Collections public restore package                | [2-part R2 restore manifest](https://media.poap.in/releases/archive-data-2026-08-06/poapin-collections-2026-07-22-v1-full.manifest.json)            |
+| Collections complete source/media backup          | [27-part R2 backup manifest](https://media.poap.in/releases/archive-data-2026-08-06/poapin-collections-2026-07-22-v1-final.manifest.json)           |
+| Moments structured snapshot, pass 1               | [poapin-moments-2026-07-23-v1-pass1.tar.gz](https://media.poap.in/releases/archive-data-2026-08-06/poapin-moments-2026-07-23-v1-pass1.tar.gz)       |
+| Moments structured snapshot, independent pass 2   | [poapin-moments-2026-07-23-v1-pass2.tar.gz](https://media.poap.in/releases/archive-data-2026-08-06/poapin-moments-2026-07-23-v1-pass2.tar.gz)       |
+| Release checksums                                 | [poapin-release-checksums.sha256](https://media.poap.in/releases/archive-data-2026-08-06/poapin-release-checksums.sha256)                           |
+| Machine-readable release manifest                 | [poapin-release-manifest.json](https://media.poap.in/releases/archive-data-2026-08-06/poapin-release-manifest.json)                                 |
+
+The Holdings SQLite package and the Collections public restore package are
+split into R2 objects because Wrangler's single-object upload limit is 300 MiB.
+Download the direct part URLs from the release manifest, or use these repeatable
+commands (run each dataset in its own directory):
+
+```sh
+base=https://media.poap.in/releases/archive-data-2026-08-06
+
+mkdir holdings && cd holdings
+for i in 000 001 002 003; do
+  curl -fLO "$base/poapin-holdings-2026-07-28-v1.tar.gz.part-$i"
+done
+curl -fLO "$base/poapin-holdings-2026-07-28-v1.tar.gz.sha256"
+cat poapin-holdings-2026-07-28-v1.tar.gz.part-* > full.tar.gz
+shasum -a 256 -c poapin-holdings-2026-07-28-v1.tar.gz.sha256
+
+cd ..
+mkdir collections-restore && cd collections-restore
+for i in 000 001; do
+  curl -fLO "$base/poapin-collections-2026-07-22-v1-full.tar.gz.part-$i"
+done
+curl -fLO "$base/poapin-collections-2026-07-22-v1-full.tar.gz.sha256"
+cat poapin-collections-2026-07-22-v1-full.tar.gz.part-* > full.tar.gz
+shasum -a 256 -c poapin-collections-2026-07-22-v1-full.tar.gz.sha256
+```
 
 The complete Collections source/media archive is split into 27 checked parts
 because it is about 5.58 GB. Download the parts named
-`poapin-collections-2026-07-22-v1-final.tar.gz.part-000` through `-026`, then
-reassemble them in lexical order and verify the published SHA-256 file:
+`poapin-collections-2026-07-22-v1-final.tar.gz.part-000` through `-026` from
+the R2 prefix, then reassemble them in lexical order and verify the published
+SHA-256 file:
 
 ```sh
+base=https://media.poap.in/releases/archive-data-2026-08-06
+for i in $(seq 0 26); do
+  part=$(printf '%03d' "$i")
+  curl -fLO "$base/poapin-collections-2026-07-22-v1-final.tar.gz.part-$part"
+done
+curl -fLO "$base/poapin-collections-2026-07-22-v1-final.tar.gz.sha256"
 cat poapin-collections-2026-07-22-v1-final.tar.gz.part-* > full.tar.gz
 shasum -a 256 -c poapin-collections-2026-07-22-v1-final.tar.gz.sha256
 ```
