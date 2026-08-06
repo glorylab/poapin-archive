@@ -190,6 +190,79 @@ Moments and 26,198 public media records. See
 [Moments preservation](docs/moments.md) and the
 [Moments backup guide](tools/moments-backup/README.md).
 
+## Official ZIP versus POAPin supplements
+
+The original POAP Archive download remains the foundation of this project. It
+is not the complete preservation set, however: the public Compass GraphQL API
+provided later Holdings, Collections, and Moments data that was absent from
+the ZIP or newer than its July 2 snapshot.
+
+| Area                        | Official `archive.zip`                                       | POAPin supplement                                                                                                                            |
+| --------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Drops and POAPs             | 73,876 Drops, 6,218,154 token rows, and 73,795 WebP artworks | 7,714,773 Compass `(poap_id, chain)` holdings; newer, private, and hidden held Drops; 102,219 referenced Drop records                        |
+| Address and collector views | Historical `tokens` table                                    | Exact owner holdings, Drop collector pages, owner aggregates, and address-bound exports                                                      |
+| Drop metadata               | Public catalog rows                                          | Public/private/hidden Drop metadata tied to a proven holding or an exact Drop ID                                                             |
+| Collections                 | Not included                                                 | 2,016 Collections, 35,954 items, 805 artists, 650 organizations, sections, suggestions, and featured records                                 |
+| Collection Drop enrichment  | Not included                                                 | 24,777 per-chain statistics, 13,165 anonymous claim aggregates, 553 featured-Drop rows, and 2,505 Moment aggregates                          |
+| Collection media            | Not included                                                 | 26,550 verified public objects: 18,533 reused Archive artworks, 7,331 new Drop originals, and 686 Collection-branding objects                |
+| Moments                     | Not included                                                 | 25,959 Moments, 26,521 Moment-to-Drop relations, 32,891 media records, 64,862 gateway records, tags, links, and Capsules                     |
+| Moments media               | Not included                                                 | 30,548 deduplicated R2 objects: 26,198 public originals and 3,505 private-preservation objects; 3,188 source-missing records remain explicit |
+
+The supplements are separate, versioned snapshots rather than silent edits to
+the official SQLite file. Their SQL projections, SQLite packages, manifests,
+and media proofs are independently checksummed and can be restored without
+running the public Worker.
+
+## Public data releases and downloads
+
+The [archive-data-2026-08-06 release](https://github.com/glorylab/poapin-archive/releases/tag/archive-data-2026-08-06)
+publishes the directly reusable public packages. Every package contains its
+own schema, source metadata, checksums, and restore-oriented D1 SQL where
+applicable. The release is split by dataset so a mirror can download only what
+it needs.
+
+| Package                                           | Download                                                                                                                                                                          |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Original POAP Archive ZIP                         | [archive.zip](https://downloads.poaparchive.com/archive.zip)                                                                                                                      |
+| Compass Holdings SQLite + D1 package              | [poapin-holdings-2026-07-28-v1.tar.gz](https://github.com/glorylab/poapin-archive/releases/download/archive-data-2026-08-06/poapin-holdings-2026-07-28-v1.tar.gz)                 |
+| Holdings artwork D1 activation and coverage proof | [poapin-holdings-artwork-2026-07-28-v1.tar.gz](https://github.com/glorylab/poapin-archive/releases/download/archive-data-2026-08-06/poapin-holdings-artwork-2026-07-28-v1.tar.gz) |
+| Collections public restore package                | [poapin-collections-2026-07-22-v1-full.tar.gz](https://github.com/glorylab/poapin-archive/releases/download/archive-data-2026-08-06/poapin-collections-2026-07-22-v1-full.tar.gz) |
+| Collections complete source/media backup          | [27-part backup and manifest](https://github.com/glorylab/poapin-archive/releases/tag/archive-data-2026-08-06)                                                                    |
+| Moments structured snapshot, pass 1               | [poapin-moments-2026-07-23-v1-pass1.tar.gz](https://github.com/glorylab/poapin-archive/releases/download/archive-data-2026-08-06/poapin-moments-2026-07-23-v1-pass1.tar.gz)       |
+| Moments structured snapshot, independent pass 2   | [poapin-moments-2026-07-23-v1-pass2.tar.gz](https://github.com/glorylab/poapin-archive/releases/download/archive-data-2026-08-06/poapin-moments-2026-07-23-v1-pass2.tar.gz)       |
+| Release checksums and machine-readable manifest   | [release assets](https://github.com/glorylab/poapin-archive/releases/tag/archive-data-2026-08-06)                                                                                 |
+
+The complete Collections source/media archive is split into 27 checked parts
+because it is about 5.58 GB. Download the parts named
+`poapin-collections-2026-07-22-v1-final.tar.gz.part-000` through `-026`, then
+reassemble them in lexical order and verify the published SHA-256 file:
+
+```sh
+cat poapin-collections-2026-07-22-v1-final.tar.gz.part-* > full.tar.gz
+shasum -a 256 -c poapin-collections-2026-07-22-v1-final.tar.gz.sha256
+```
+
+The database packages do not duplicate the media archive. Public immutable
+originals are served from [`media.poap.in`](https://media.poap.in) using the
+snapshot-scoped object keys and media manifests inside each package:
+
+```text
+https://media.poap.in/snapshots/2026-07-02-v1/artwork/<drop_id>.webp
+https://media.poap.in/snapshots/collections-2026-07-22-v1/collections/drop-artwork/sha256/<prefix>/<sha256>.<ext>
+https://media.poap.in/snapshots/compass-holdings-2026-07-28-v1/holdings/drop-artwork/sha256/<prefix>/<sha256>.<ext>
+https://media.poap.in/snapshots/moments-2026-07-23-v1/moments/original/sha256/<prefix>/<sha256>.<ext>
+```
+
+For a single person, the more convenient option remains the address page's
+browser-built personal-site ZIP and its separate opt-in image ZIP. The global
+release is intended for researchers, self-hosted mirrors, and alternate
+frontends.
+
+The code is MIT-licensed, but imported records, artwork, logos, and third-party
+metadata retain their respective rights and source terms. Public availability
+is not a new license grant; consult [Data and licensing](docs/data-and-licensing.md)
+before redistributing a downstream mirror.
+
 ## Portable personal sites
 
 The address page can collect a complete personal archive through the paginated
